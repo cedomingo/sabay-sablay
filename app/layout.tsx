@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import Toast from "@/components/Toast";
 
 export const metadata: Metadata = {
   title: "Schedule Planner",
@@ -32,7 +33,10 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="font-body antialiased bg-paper text-ink">{children}</body>
+      <body className="font-body antialiased bg-paper text-ink">
+        {children}
+        <Toast />
+      </body>
     </html>
   );
 }

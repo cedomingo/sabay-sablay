@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { LayoutGrid, Users, ArrowLeft, LogOut } from "lucide-react";
 import { joinGroup } from "@/lib/actions/group";
 import Link from "next/link";
+import SubmitButton from "@/components/SubmitButton";
 
 async function handleSignOut() {
   "use server";
@@ -111,13 +112,13 @@ export default async function JoinGroupPage({
               </span>
             </div>
             <form action={handleSignOut}>
-              <button
-                type="submit"
-                className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+              <SubmitButton
+                icon={<LogOut size={14} />}
+                pendingChildren="Signing out..."
+                className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855] disabled:opacity-60"
               >
-                <LogOut size={14} />
                 Sign out
-              </button>
+              </SubmitButton>
             </form>
           </div>
         </div>
@@ -170,13 +171,13 @@ export default async function JoinGroupPage({
           ) : (
             <div className="mt-8 space-y-3">
               <form action={async () => { "use server"; await handleJoin(code); }}>
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#F4A28C] px-6 py-3 text-sm font-semibold text-[#512E2B] transition-transform hover:-translate-y-0.5"
+                <SubmitButton
+                  icon={<Users size={16} />}
+                  pendingChildren="Joining..."
+                  className="inline-flex items-center gap-2 rounded-xl bg-[#F4A28C] px-6 py-3 text-sm font-semibold text-[#512E2B] transition-transform hover:-translate-y-0.5 disabled:opacity-60 disabled:translate-y-0"
                 >
-                  <Users size={16} />
                   Join {group.name}
-                </button>
+                </SubmitButton>
               </form>
               <div>
                 <Link

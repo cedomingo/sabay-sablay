@@ -8,17 +8,16 @@ import {
   Copy,
   LogOut,
   Trash2,
-  UserMinus,
   LogIn,
   Calendar,
   ListChecks,
-  Circle,
-  CircleDot,
   BookOpen,
 } from "lucide-react";
 import { getCourseMates } from "@/lib/actions/course-mates";
-import { getGroup, leaveGroup, removeMember, deleteGroup } from "@/lib/actions/group";
+import { getGroup, leaveGroup, deleteGroup } from "@/lib/actions/group";
 import NotificationBell from "@/components/NotificationBell";
+import GroupMembersList from "@/components/GroupMembersList";
+import SubmitButton from "@/components/SubmitButton";
 import Link from "next/link";
 
 /**
@@ -118,6 +117,9 @@ export default async function GroupDetailPage({
     getMemberPresence(memberIds),
     getCourseMates(groupId),
   ]);
+  const presenceObj = Object.fromEntries(
+    Array.from(presenceMap.entries()).map(([id, p]) => [id, { inClass: p.inClass, subject: p.subject }])
+  );
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
@@ -136,13 +138,13 @@ export default async function GroupDetailPage({
             <div className="flex items-center gap-2">
               <NotificationBell />
               <form action={handleSignOut}>
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+                <SubmitButton
+                  icon={<LogOut size={14} />}
+                  pendingChildren="Signing out..."
+                  className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855] disabled:opacity-60"
                 >
-                  <LogOut size={14} />
                   Sign out
-                </button>
+                </SubmitButton>
               </form>
             </div>
           </div>
@@ -196,100 +198,13 @@ export default async function GroupDetailPage({
               </div>
             </div>
 
-            <div className="divide-y divide-[#E1DFD7]">
-              {group.group_members?.map((member) => {
-                const fullName = member.profiles?.full_name || "Unknown";
-                const initials = fullName
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .slice(0, 2)
-                  .toUpperCase();
-                const isSelf = member.user_id === user.id;
-                const isMemberOwner = member.role === "owner";
-
-                return (
-                  <div
-                    key={member.user_id}
-                    className="flex items-center justify-between px-5 py-3.5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className={`grid h-9 w-9 place-items-center rounded-full text-xs font-bold ${
-                          presenceMap.get(member.user_id)?.inClass
-                            ? "bg-[#F4A28C] text-[#512E2B]"
-                            : "bg-[#8DDDD0] text-[#163D3A]"
-                        }`}>
-                          {initials}
-                        </div>
-                        {/* Presence indicator dot */}
-                        <span
-                          className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#F8F6F0] ${
-                            presenceMap.get(member.user_id)?.inClass
-                              ? "bg-[#DC7C66]"
-                              : "bg-[#56B9AC]"
-                          }`}
-                          title={
-                            presenceMap.get(member.user_id)?.inClass
-                              ? `In class: ${presenceMap.get(member.user_id)?.subject}`
-                              : "Free now"
-                          }
-                        />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-[#214746]">
-                          {fullName}
-                          {isSelf && (
-                            <span className="ml-1.5 text-xs font-normal text-[#87908A]">
-                              (you)
-                            </span>
-                          )}
-                        </p>
-                        <div className="flex items-center gap-1.5">
-                          {presenceMap.get(member.user_id)?.inClass ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#A45D42]">
-                              <CircleDot size={8} className="text-[#DC7C66]" />
-                              In class: {presenceMap.get(member.user_id)?.subject}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#286057]">
-                              <Circle size={8} className="text-[#56B9AC]" />
-                              Free now
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {isMemberOwner && (
-                        <span className="rounded-full bg-[#D9E7DE] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#286057]">
-                          Owner
-                        </span>
-                      )}
-
-                      {/* Owner can remove other members */}
-                      {isOwner && !isSelf && !isMemberOwner && (
-                        <form
-                          action={async () => {
-                            "use server";
-                            await removeMember(groupId, member.user_id);
-                          }}
-                        >
-                          <button
-                            type="submit"
-                            className="grid h-7 w-7 place-items-center rounded-lg text-[#C77A68] hover:bg-[#FCE9E3]"
-                            title="Remove member"
-                          >
-                            <UserMinus size={14} />
-                          </button>
-                        </form>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <GroupMembersList
+              groupId={groupId}
+              initialMembers={group.group_members ?? []}
+              currentUserId={user.id}
+              isOwner={isOwner}
+              presence={presenceObj}
+            />
           </div>
 
           {/* Sidebar */}
@@ -423,13 +338,13 @@ export default async function GroupDetailPage({
                       await leaveGroup(groupId);
                     }}
                   >
-                    <button
-                      type="submit"
-                      className="flex w-full items-center gap-2 rounded-xl border border-[#C77A68]/30 px-4 py-2.5 text-xs font-semibold text-[#A14D3F] hover:bg-[#FCE9E3]"
+                    <SubmitButton
+                      icon={<LogOut size={14} />}
+                      pendingChildren="Leaving..."
+                      className="flex w-full items-center gap-2 rounded-xl border border-[#C77A68]/30 px-4 py-2.5 text-xs font-semibold text-[#A14D3F] hover:bg-[#FCE9E3] disabled:opacity-60"
                     >
-                      <LogOut size={14} />
                       Leave group
-                    </button>
+                    </SubmitButton>
                   </form>
                 )}
 
@@ -440,13 +355,13 @@ export default async function GroupDetailPage({
                       await deleteGroup(groupId);
                     }}
                   >
-                    <button
-                      type="submit"
-                      className="flex w-full items-center gap-2 rounded-xl border border-[#C77A68]/30 px-4 py-2.5 text-xs font-semibold text-[#A14D3F] hover:bg-[#FCE9E3]"
+                    <SubmitButton
+                      icon={<Trash2 size={14} />}
+                      pendingChildren="Deleting..."
+                      className="flex w-full items-center gap-2 rounded-xl border border-[#C77A68]/30 px-4 py-2.5 text-xs font-semibold text-[#A14D3F] hover:bg-[#FCE9E3] disabled:opacity-60"
                     >
-                      <Trash2 size={14} />
                       Delete group
-                    </button>
+                    </SubmitButton>
                   </form>
                 )}
               </div>

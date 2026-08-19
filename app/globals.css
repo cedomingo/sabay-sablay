@@ -38,4 +38,31 @@
   .schedule-cell:hover {
     background: #E7EBE5;
   }
+
+  /* Instant tactile feedback on every clickable element app-wide */
+  button:not(:disabled),
+  a {
+    transition: transform 0.1s ease, opacity 0.1s ease, background-color 0.15s ease, border-color 0.15s ease;
+  }
+  button:not(:disabled):active,
+  a:active {
+    transform: scale(0.97);
+  }
+  button:disabled {
+    cursor: default;
+  }
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  .toast-in {
+    animation: toast-in 0.18s ease-out;
+  }
 }

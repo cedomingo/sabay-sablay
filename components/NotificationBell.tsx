@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Bell, Check, CheckCheck, X, Trash2 } from "lucide-react";
+import { Bell, Check, CheckCheck, Trash2 } from "lucide-react";
 import {
   getNotifications,
   getUnreadCount,
@@ -10,6 +10,7 @@ import {
   clearReadNotifications,
   type Notification,
 } from "@/lib/actions/notifications";
+import { toast } from "@/lib/toast";
 
 interface NotificationBellProps {
   initialCount?: number;
@@ -47,6 +48,7 @@ export default function NotificationBell({ initialCount = 0 }: NotificationBellP
       setLoading(true);
       getNotifications()
         .then((data) => setNotifications(data))
+        .catch(() => toast.error("Couldn't load notifications."))
         .finally(() => setLoading(false));
     }
   }, [open]);
@@ -54,39 +56,69 @@ export default function NotificationBell({ initialCount = 0 }: NotificationBellP
   // Refresh count periodically
   useEffect(() => {
     const interval = setInterval(async () => {
-      const newCount = await getUnreadCount();
-      setCount(newCount);
+      try {
+        const newCount = await getUnreadCount();
+        setCount(newCount);
+      } catch {
+        // silent — periodic refresh, not user-initiated
+      }
     }, 30000); // every 30 seconds
     return () => clearInterval(interval);
   }, []);
 
-  async function handleToggle() {
-    const next = !open;
-    setOpen(next);
-    if (next) {
-      // Refresh count when opening
-      const newCount = await getUnreadCount();
-      setCount(newCount);
-    }
+  function handleToggle() {
+    // Flip instantly; the panel renders right away regardless of network.
+    setOpen((prev) => !prev);
   }
 
   async function handleMarkRead(id: string) {
-    await markAsRead(id);
+    const previousNotifications = notifications;
+    const previousCount = count;
+
+    // Instant optimistic update
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
     setCount((prev) => Math.max(0, prev - 1));
+
+    try {
+      await markAsRead(id);
+    } catch (err) {
+      console.error(err);
+      setNotifications(previousNotifications);
+      setCount(previousCount);
+      toast.error("Couldn't mark that as read.");
+    }
   }
 
   async function handleMarkAllRead() {
-    await markAllAsRead();
+    const previousNotifications = notifications;
+    const previousCount = count;
+
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setCount(0);
+
+    try {
+      await markAllAsRead();
+    } catch (err) {
+      console.error(err);
+      setNotifications(previousNotifications);
+      setCount(previousCount);
+      toast.error("Couldn't mark all as read.");
+    }
   }
 
   async function handleClearRead() {
-    await clearReadNotifications();
+    const previousNotifications = notifications;
     setNotifications((prev) => prev.filter((n) => !n.read));
+
+    try {
+      await clearReadNotifications();
+    } catch (err) {
+      console.error(err);
+      setNotifications(previousNotifications);
+      toast.error("Couldn't clear read notifications.");
+    }
   }
 
   function formatTime(dateStr: string): string {
@@ -181,9 +213,7 @@ export default function NotificationBell({ initialCount = 0 }: NotificationBellP
                   <div
                     key={notification.id}
                     className={`flex items-start gap-3 px-5 py-3.5 transition-colors ${
-                      notification.read
-                        ? "opacity-60"
-                        : "bg-[#F4F1E9]/60"
+                      notification.read ? "opacity-60" : "bg-[#F4F1E9]/60"
                     }`}
                   >
                     <div className="mt-0.5 shrink-0">

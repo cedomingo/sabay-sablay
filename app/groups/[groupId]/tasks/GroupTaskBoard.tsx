@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   CheckCircle2,
@@ -19,6 +20,7 @@ import {
   updateTask,
   type Task,
 } from "@/lib/actions/tasks";
+import { useOptimisticAction } from "@/lib/hooks/use-optimistic-action";
 
 interface Member {
   user_id: string;
@@ -39,9 +41,15 @@ export default function GroupTaskBoard({
   members,
   currentUserId,
 }: GroupTaskBoardProps) {
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const { run, pendingIds } = useOptimisticAction<Task[]>(setTasks);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTasks(initialTasks);
+  }, [initialTasks]);
 
   // Create form state
   const [newTitle, setNewTitle] = useState("");
@@ -85,42 +93,86 @@ export default function GroupTaskBoard({
   }
 
   async function handleCreate() {
-    if (!newTitle.trim()) return;
+    const title = newTitle.trim();
+    if (!title) return;
 
-    await createGroupTask({
-      groupId,
-      title: newTitle.trim(),
-      description: newDescription.trim() || undefined,
-      dueAt: newDueAt ? new Date(newDueAt).toISOString() : undefined,
-      assigneeId: newAssignee || undefined,
-    });
-
+    const description = newDescription.trim() || null;
+    const dueAt = newDueAt ? new Date(newDueAt).toISOString() : null;
+    const assigneeId = newAssignee || null;
+    const tempId = `temp-${Date.now()}`;
     resetCreateForm();
-    window.location.reload();
+
+    await run({
+      apply: (prev) => [
+        {
+          id: tempId,
+          owner_id: currentUserId,
+          group_id: groupId,
+          title,
+          description,
+          due_at: dueAt,
+          status: "open",
+          assignee_id: assigneeId,
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ],
+      revert: (prev) => prev.filter((t) => t.id !== tempId),
+      action: () =>
+        createGroupTask({
+          groupId,
+          title,
+          description: description || undefined,
+          dueAt: dueAt || undefined,
+          assigneeId: assigneeId || undefined,
+        }),
+      errorMessage: "Couldn't create that task.",
+      onSuccess: () => router.refresh(),
+    });
   }
 
   async function handleToggle(taskId: string) {
-    await toggleTaskStatus(taskId, groupId);
-    window.location.reload();
+    await run({
+      id: taskId,
+      apply: (prev) =>
+        prev.map((t) =>
+          t.id === taskId ? { ...t, status: t.status === "open" ? "done" : "open" } : t
+        ),
+      action: () => toggleTaskStatus(taskId, groupId),
+      errorMessage: "Couldn't update that task.",
+    });
   }
 
   async function handleDelete(taskId: string) {
-    await deleteTask(taskId);
-    window.location.reload();
+    await run({
+      id: taskId,
+      apply: (prev) => prev.filter((t) => t.id !== taskId),
+      action: () => deleteTask(taskId),
+      errorMessage: "Couldn't delete that task.",
+    });
   }
 
   async function handleUpdate(taskId: string) {
-    if (!editTitle.trim()) return;
+    const title = editTitle.trim();
+    if (!title) return;
 
-    await updateTask(taskId, {
-      title: editTitle.trim(),
-      description: editDescription.trim() || null,
-      dueAt: editDueAt ? new Date(editDueAt).toISOString() : null,
-      assigneeId: editAssignee || null,
-    });
-
+    const description = editDescription.trim() || null;
+    const dueAt = editDueAt ? new Date(editDueAt).toISOString() : null;
+    const assigneeId = editAssignee || null;
     cancelEditing();
-    window.location.reload();
+
+    await run({
+      id: taskId,
+      apply: (prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, title, description, due_at: dueAt, assignee_id: assigneeId }
+            : t
+        ),
+      action: () =>
+        updateTask(taskId, { title, description, dueAt, assigneeId }),
+      errorMessage: "Couldn't save your changes.",
+    });
   }
 
   function formatDueDate(dueAt: string | null): string {
@@ -158,17 +210,6 @@ export default function GroupTaskBoard({
     if (!assigneeId) return "";
     const member = members.find((m) => m.user_id === assigneeId);
     return member?.full_name || "Unknown";
-  }
-
-  function getAssigneeInitials(assigneeId: string | null): string {
-    if (!assigneeId) return "";
-    const name = getAssigneeName(assigneeId);
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
   }
 
   function getOwnerName(ownerId: string): string {
@@ -299,7 +340,12 @@ export default function GroupTaskBoard({
         ) : (
           <div className="divide-y divide-[#E1DFD7]">
             {openTasks.map((task) => (
-              <div key={task.id} className="px-5 py-4">
+              <div
+                key={task.id}
+                className={`px-5 py-4 transition-opacity ${
+                  pendingIds.has(task.id) ? "opacity-60" : ""
+                }`}
+              >
                 {editingId === task.id ? (
                   /* Edit Mode */
                   <div className="space-y-3">
@@ -443,11 +489,13 @@ export default function GroupTaskBoard({
           </div>
           <div className="divide-y divide-[#E1DFD7]">
             {doneTasks.map((task) => (
-              <div key={task.id} className="flex items-center gap-3 px-5 py-3.5">
-                <button
-                  onClick={() => handleToggle(task.id)}
-                  className="shrink-0"
-                >
+              <div
+                key={task.id}
+                className={`flex items-center gap-3 px-5 py-3.5 transition-opacity ${
+                  pendingIds.has(task.id) ? "opacity-60" : ""
+                }`}
+              >
+                <button onClick={() => handleToggle(task.id)} className="shrink-0">
                   <CheckCircle2 size={20} className="text-[#56B9AC]" />
                 </button>
                 <div className="flex-1 min-w-0">

@@ -6,6 +6,7 @@ import { getUpcomingTasks } from "@/lib/actions/tasks";
 import { checkDueDateNotifications } from "@/lib/actions/notifications";
 import NotificationBell from "@/components/NotificationBell";
 import PrivacyToggle from "@/components/PrivacyToggle";
+import SubmitButton from "@/components/SubmitButton";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const TIME_LABELS = [
@@ -205,13 +206,13 @@ export default async function SchedulePage() {
                 My groups
               </a>
               <form action={handleSignOut}>
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+                <SubmitButton
+                  icon={<LogOut size={14} />}
+                  pendingChildren="Signing out..."
+                  className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855] disabled:opacity-60"
                 >
-                  <LogOut size={14} />
                   Sign out
-                </button>
+                </SubmitButton>
               </form>
             </div>
           </div>

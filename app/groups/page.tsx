@@ -4,6 +4,7 @@ import Link from "next/link";
 import { LayoutGrid, Plus, Users, LogOut, ListChecks } from "lucide-react";
 import { getMyGroups } from "@/lib/actions/group";
 import NotificationBell from "@/components/NotificationBell";
+import SubmitButton from "@/components/SubmitButton";
 import { revalidatePath } from "next/cache";
 
 async function handleSignOut() {
@@ -34,13 +35,13 @@ export default async function GroupsPage() {
             <div className="flex items-center gap-2">
               <NotificationBell />
               <form action={handleSignOut}>
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+                <SubmitButton
+                  icon={<LogOut size={14} />}
+                  pendingChildren="Signing out..."
+                  className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855] disabled:opacity-60"
                 >
-                  <LogOut size={14} />
                   Sign out
-                </button>
+                </SubmitButton>
               </form>
             </div>
           </div>
