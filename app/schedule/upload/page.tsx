@@ -1,31 +1,27 @@
 "use client";
 
-import { Suspense, useCallback, useRef, useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Upload, Check } from "lucide-react";
-import AppHeader from "@/components/AppHeader";
+import { createBrowserClient } from "@supabase/ssr";
+import { Upload, X, Loader2 } from "lucide-react";
+import { parseScheduleImage } from "@/lib/client-ocr/parseSchedule";
 
-export default function UploadPage() {
-  return (
-    <Suspense fallback={null}>
-      <UploadPageInner />
-    </Suspense>
-  );
-}
-
-function UploadPageInner() {
+export default function ScheduleUploadPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // Set when the user got here via a group invite and hasn't uploaded a
-  // schedule yet — carried through to the correction page so saving
-  // lands them on the group's weekly schedule instead of their own.
   const groupId = searchParams.get("groupId");
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dragActive, setDragActive] = useState(false);
+
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string>("");
+
+  useEffect(() => {
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [preview]);
 
   const handleFile = useCallback((f: File) => {
     if (!f.type.startsWith("image/")) {
@@ -38,233 +34,154 @@ function UploadPageInner() {
     }
     setFile(f);
     setError(null);
+    setProgress("");
 
     const reader = new FileReader();
     reader.onload = (e) => setPreview(e.target?.result as string);
     reader.readAsDataURL(f);
   }, []);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragActive(false);
-      const f = e.dataTransfer.files[0];
-      if (f) handleFile(f);
-    },
-    [handleFile]
-  );
-
   async function handleUpload() {
     if (!file) return;
 
     setUploading(true);
     setError(null);
+    setProgress("Loading image...");
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
+      // 1. Client-side OCR
+      const parsed = await parseScheduleImage(file, (msg) => setProgress(msg));
 
-      const res = await fetch("/api/schedule/parse", {
-        method: "POST",
-        body: formData,
-      });
-
-      // Vercel (or any proxy in front of the app) can return a plain HTML
-      // error page for things like function timeouts — parsing that as
-      // JSON throws a confusing "Unexpected token" error. Check the
-      // content type first so we can show a real message instead.
-      const isJson = res.headers
-        .get("content-type")
-        ?.includes("application/json");
-
-      if (!res.ok) {
-        const message = isJson
-          ? (await res.json()).error
-          : "The server took too long to respond. This can happen if the " +
-            "OCR service was idle and is still starting up — please wait a " +
-            "few seconds and try again.";
-        throw new Error(message || "Failed to parse schedule");
+      // 2. Upload to Supabase Storage directly from client
+      setProgress("Uploading image to storage...");
+      
+      // Use createBrowserClient for client components
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error("Not authenticated. Please log in.");
       }
 
-      if (!isJson) {
-        throw new Error(
-          "Received an unexpected response from the server. Please try again."
-        );
+      const fileName = `${user.id}/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
+      const { error: uploadError } = await supabase.storage
+        .from("schedule-images")
+        .upload(fileName, file);
+
+      if (uploadError) {
+        throw new Error(`Failed to upload image: ${uploadError.message}`);
       }
 
-      const parsed = await res.json();
-
-      // Store parsed data in sessionStorage for the correction page
+      // 3. Store and redirect
+      setProgress("Finishing...");
       sessionStorage.setItem(
         "parsedSchedule",
         JSON.stringify({
           total_units: parsed.total_units,
           schedule: parsed.schedule,
-          image_path: parsed.image_path,
+          image_path: fileName,
           groupId: groupId || undefined,
         })
       );
 
       router.push("/schedule/correction");
     } catch (err) {
+      console.error("Upload/OCR error:", err);
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
+      setProgress("");
     }
   }
 
   return (
-    <main className="min-h-[100dvh] bg-[#F4F1E9]">
-      <AppHeader
-        maxWidth="max-w-3xl"
-        showNotificationBell={false}
-        showSignOut={false}
-        title={
-          <>
-            <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">
-              Upload your timetable
-            </h1>
-            <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#D3E5DC]">
-              Take a screenshot of your class schedule from the registration
-              portal and we&apos;ll turn it into a map you can actually read.
-            </p>
-          </>
-        }
-      />
+    <div className="max-w-2xl mx-auto p-6 space-y-6">
+      <h1 className="text-2xl font-bold">Upload Schedule</h1>
+      <p className="text-muted-foreground">
+        Upload a screenshot of your schedule grid. The image will be processed 
+        directly in your browser for privacy and speed.
+      </p>
 
-      {/* Upload Area */}
-      <div className="mx-auto max-w-3xl px-6 py-10 md:px-10">
-        {!file ? (
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragActive(true);
-            }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`paper-grid cursor-pointer rounded-[22px] border-2 border-dashed p-12 text-center transition-all md:p-16 ${
-              dragActive
-                ? "border-[#56B9AC] bg-[#DFF1EA]/50"
-                : "border-[#C8C6BD] hover:border-[#56B9AC] hover:bg-[#E7EBE5]"
-            }`}
-          >
-            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#F6D486] text-[#765514]">
-              <Upload size={24} />
-            </div>
-            <h2 className="mt-6 font-display text-xl font-semibold text-[#214746]">
-              Drop your schedule screenshot here
-            </h2>
-            <p className="mx-auto mt-2 max-w-sm text-sm text-[#717972]">
-              or click to browse — PNG, JPG up to 10MB
+      {!file ? (
+        <label className="flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer bg-muted/50 hover:bg-muted transition-colors">
+          <div className="flex flex-col items-center justify-center pt-5 pb-6">
+            <Upload className="w-10 h-10 mb-3 text-muted-foreground" />
+            <p className="mb-2 text-sm text-muted-foreground">
+              <span className="font-semibold">Click to upload</span> or drag and drop
             </p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
+            <p className="text-xs text-muted-foreground">PNG, JPG (max 10MB)</p>
+          </div>
+          <input
+            type="file"
+            className="hidden"
+            accept="image/*"
+            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+          />
+        </label>
+      ) : (
+        <div className="space-y-4">
+          <div className="relative rounded-lg overflow-hidden border bg-muted/30">
+            <img src={preview!} alt="Preview" className="w-full h-auto max-h-96 object-contain" />
+            <button
+              onClick={() => {
+                setFile(null);
+                setPreview(null);
+                setError(null);
+                setProgress("");
               }}
-            />
+              className="absolute top-2 right-2 p-1 bg-background/80 rounded-full hover:bg-background shadow-sm"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-        ) : (
-          <div className="rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-6 md:p-8">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                  Selected file
-                </p>
-                <p className="mt-1 text-sm font-semibold text-[#214746]">
-                  {file.name}
-                </p>
-                <p className="text-xs text-[#87908A]">
-                  {(file.size / 1024 / 1024).toFixed(1)} MB
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setFile(null);
-                  setPreview(null);
-                }}
-                className="grid h-8 w-8 place-items-center rounded-lg text-[#87908A] hover:bg-[#E7EBE5]"
-              >
-                ×
-              </button>
+
+          {error && (
+            <div className="p-3 bg-destructive/10 text-destructive text-sm rounded-md">
+              {error}
             </div>
+          )}
 
-            {preview && (
-              <div className="mt-4 overflow-hidden rounded-xl border border-[#D0CEC4]">
-                <img
-                  src={preview}
-                  alt="Schedule preview"
-                  className="w-full object-contain"
-                  style={{ maxHeight: "400px" }}
-                />
-              </div>
-            )}
-
-            {error && (
-              <div className="mt-4 rounded-xl border border-[#C77A68] bg-[#FCE9E3] px-4 py-3 text-xs text-[#A14D3F]">
-                {error}
-              </div>
-            )}
-
-            <div className="mt-6 flex items-center gap-3">
-              <button
-                onClick={handleUpload}
-                disabled={uploading}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#214746] px-5 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5 disabled:opacity-60"
-              >
-                {uploading ? (
-                  <>
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#F4F1E9] border-t-transparent" />
-                    Parsing…
-                  </>
-                ) : (
-                  <>
-                    <Check size={16} />
-                    Parse schedule
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => {
-                  setFile(null);
-                  setPreview(null);
-                }}
-                className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5]"
-              >
-                Choose different file
-              </button>
+          {uploading && (
+            <div className="flex items-center gap-3 p-3 bg-primary/5 text-primary text-sm rounded-md">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>{progress || "Processing..."}</span>
             </div>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setFile(null);
+                setPreview(null);
+                setError(null);
+                setProgress("");
+              }}
+              disabled={uploading}
+              className="flex-1 px-4 py-2 border rounded-md hover:bg-muted disabled:opacity-50"
+            >
+              Change Image
+            </button>
+            <button
+              onClick={handleUpload}
+              disabled={uploading}
+              className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Processing
+                </>
+              ) : (
+                "Parse Schedule"
+              )}
+            </button>
           </div>
-        )}
-
-        {/* Tips */}
-        <div className="mt-8 rounded-[18px] border border-[#D0CEC4] bg-[#F8F6F0] p-5">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-            Tips for best results
-          </p>
-          <ul className="mt-3 space-y-2 text-sm text-[#52605C]">
-            <li className="flex items-start gap-2">
-              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#F4A28C]" />
-              Use a full screenshot of the schedule grid from the registration
-              portal
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#8DDDD0]" />
-              Make sure all days and time slots are visible
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#C9B9E9]" />
-              You&apos;ll be able to review and correct any misread entries
-              before saving
-            </li>
-          </ul>
         </div>
-      </div>
-    </main>
+      )}
+    </div>
   );
 }
