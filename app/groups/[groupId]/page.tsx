@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { LayoutGrid, ArrowLeft, Users, LogOut, Settings, BookOpen } from "lucide-react";
+import { LayoutGrid, ArrowLeft, Users, LogOut, Settings, BookOpen, UserRound } from "lucide-react";
 import { getGroup } from "@/lib/actions/group";
 import { getGroupSchedule } from "@/lib/actions/group-schedule";
 import { getGroupCalendarTasks } from "@/lib/actions/tasks";
@@ -70,6 +70,13 @@ export default async function GroupDetailPage({
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell />
+              <Link
+                href="/profile"
+                className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+              >
+                <UserRound size={14} />
+                Profile
+              </Link>
               <Link
                 href={`/groups/${groupId}/settings`}
                 className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"

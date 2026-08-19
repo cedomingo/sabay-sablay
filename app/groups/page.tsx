@@ -1,10 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { LayoutGrid, Plus, Users, LogOut } from "lucide-react";
+import { LayoutGrid, Users, LogOut, UserRound } from "lucide-react";
 import { getMyGroups } from "@/lib/actions/group";
 import NotificationBell from "@/components/NotificationBell";
 import SubmitButton from "@/components/SubmitButton";
+import CreateGroupModal from "./CreateGroupModal";
 import { revalidatePath } from "next/cache";
 
 async function handleSignOut() {
@@ -34,6 +35,13 @@ export default async function GroupsPage() {
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell />
+              <Link
+                href="/profile"
+                className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+              >
+                <UserRound size={14} />
+                Profile
+              </Link>
               <form action={handleSignOut}>
                 <SubmitButton
                   icon={<LogOut size={14} />}
@@ -62,13 +70,7 @@ export default async function GroupsPage() {
               >
                 My schedule
               </Link>
-              <Link
-                href="/groups/create"
-                className="inline-flex items-center gap-2 rounded-xl bg-[#F4A28C] px-4 py-2.5 text-sm font-semibold text-[#512E2B] transition-transform hover:-translate-y-0.5"
-              >
-                <Plus size={16} />
-                New group
-              </Link>
+              <CreateGroupModal variant="button" />
             </div>
           </div>
         </div>
@@ -90,13 +92,7 @@ export default async function GroupsPage() {
               classmates, or join one using an invite code.
             </p>
             <div className="mt-6 flex items-center justify-center gap-3">
-              <Link
-                href="/groups/create"
-                className="inline-flex items-center gap-2 rounded-xl bg-[#214746] px-5 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5"
-              >
-                <Plus size={16} />
-                Create a group
-              </Link>
+              <CreateGroupModal variant="empty-state" />
             </div>
           </div>
         ) : (

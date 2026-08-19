@@ -1,11 +1,24 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Upload, LayoutGrid, X, Check } from "lucide-react";
 
 export default function UploadPage() {
+  return (
+    <Suspense fallback={null}>
+      <UploadPageInner />
+    </Suspense>
+  );
+}
+
+function UploadPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Set when the user got here via a group invite and hasn't uploaded a
+  // schedule yet — carried through to the correction page so saving
+  // lands them on the group's weekly schedule instead of their own.
+  const groupId = searchParams.get("groupId");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -69,6 +82,7 @@ export default function UploadPage() {
           total_units: parsed.total_units,
           schedule: parsed.schedule,
           image_path: parsed.image_path,
+          groupId: groupId || undefined,
         })
       );
 

@@ -32,6 +32,9 @@ export default function CorrectionPage() {
   const [entries, setEntries] = useState<EnrichedEntry[]>([]);
   const [imagePath, setImagePath] = useState("");
   const [totalUnits, setTotalUnits] = useState<number | null>(null);
+  // Set when the upload came from a group invite flow — after saving,
+  // we send the user to that group's weekly schedule instead of /schedule.
+  const [groupId, setGroupId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [enriching, setEnriching] = useState(false);
@@ -60,6 +63,7 @@ export default function CorrectionPage() {
       setEntries(withEnrichment);
       setImagePath(data.image_path || "");
       setTotalUnits(data.total_units || null);
+      setGroupId(data.groupId || null);
     } catch {
       router.push("/schedule/upload");
       return;
@@ -173,8 +177,9 @@ export default function CorrectionPage() {
       // Clear the parsed data from session storage
       sessionStorage.removeItem("parsedSchedule");
 
-      // Redirect to the schedule view
-      router.push("/schedule");
+      // If this upload came from a group invite, land straight on that
+      // group's weekly schedule instead of the personal one.
+      router.push(groupId ? `/groups/${groupId}` : "/schedule");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save schedule");
       setSaving(false);
@@ -233,7 +238,7 @@ export default function CorrectionPage() {
               clearer screenshot.
             </p>
             <button
-              onClick={() => router.push("/schedule/upload")}
+              onClick={() => router.push(groupId ? `/schedule/upload?groupId=${groupId}` : "/schedule/upload")}
               className="mt-6 rounded-xl bg-[#214746] px-5 py-2.5 text-sm font-semibold text-[#F4F1E9]"
             >
               Upload again
@@ -453,7 +458,7 @@ export default function CorrectionPage() {
             {/* Actions */}
             <div className="mt-6 flex items-center justify-between">
               <button
-                onClick={() => router.push("/schedule/upload")}
+                onClick={() => router.push(groupId ? `/schedule/upload?groupId=${groupId}` : "/schedule/upload")}
                 className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5]"
               >
                 Upload different file

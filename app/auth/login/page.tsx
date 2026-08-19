@@ -4,7 +4,11 @@ import { createClient } from "@/lib/supabase/client";
 import { useState } from "react";
 import { LayoutGrid } from "lucide-react";
 
-export default function LoginPage() {
+export default function LoginPage({
+  searchParams,
+}: {
+  searchParams?: { next?: string; error?: string };
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
@@ -13,10 +17,20 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
+    // Carry along where the user was headed (e.g. a group invite link)
+    // so the callback can send them back there once they're signed in.
+    const next =
+      searchParams?.next && searchParams.next.startsWith("/")
+        ? searchParams.next
+        : undefined;
+    const redirectTo = next
+      ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`
+      : `${window.location.origin}/auth/callback`;
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo,
       },
     });
 

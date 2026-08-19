@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { LayoutGrid, Upload, MapPin, LogOut, Users, ListChecks } from "lucide-react";
+import { LayoutGrid, Upload, MapPin, LogOut, Users, ListChecks, UserRound } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { getUpcomingTasks, getAllVisibleTasks } from "@/lib/actions/tasks";
 import { checkDueDateNotifications } from "@/lib/actions/notifications";
@@ -257,6 +257,13 @@ export default async function SchedulePage({
               >
                 <Users size={14} />
                 My groups
+              </a>
+              <a
+                href="/profile"
+                className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+              >
+                <UserRound size={14} />
+                Profile
               </a>
               <form action={handleSignOut}>
                 <SubmitButton

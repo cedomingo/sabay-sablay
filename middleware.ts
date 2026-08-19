@@ -1,6 +1,11 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
+function safeTarget(raw: string | null, fallback: string): string {
+  if (raw && raw.startsWith("/") && !raw.startsWith("//")) return raw;
+  return fallback;
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: { headers: request.headers },
@@ -37,21 +42,49 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Redirect unauthenticated users away from protected routes
-  const isAuthRoute = request.nextUrl.pathname.startsWith("/auth");
-  const isApiRoute = request.nextUrl.pathname.startsWith("/api");
+  const { pathname, search } = request.nextUrl;
+  const isAuthRoute = pathname.startsWith("/auth");
+  const isApiRoute = pathname.startsWith("/api");
+  const isOnboardingRoute = pathname.startsWith("/onboarding");
 
+  // Redirect unauthenticated users away from protected routes, preserving
+  // where they were headed (e.g. a group invite link) as `next` so we can
+  // send them back there once they've signed in.
   if (!user && !isAuthRoute && !isApiRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
+    url.search = "";
+    url.searchParams.set("next", pathname + search);
     return NextResponse.redirect(url);
   }
 
-  // Redirect authenticated users away from login page
-  if (user && isAuthRoute && request.nextUrl.pathname === "/auth/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/schedule";
-    return NextResponse.redirect(url);
+  if (user) {
+    // Redirect authenticated users away from the login page.
+    if (isAuthRoute && pathname === "/auth/login") {
+      const requestedNext = request.nextUrl.searchParams.get("next");
+      const target = safeTarget(requestedNext, "/schedule");
+      return NextResponse.redirect(new URL(target, request.url));
+    }
+
+    // First-time users must pick a display name before doing anything
+    // else in the app. This is a safety net alongside the check already
+    // done in /auth/callback — it catches direct navigation, refreshes,
+    // or resumed sessions mid-onboarding.
+    if (!isAuthRoute && !isApiRoute && !isOnboardingRoute) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("onboarding_completed")
+        .eq("id", user.id)
+        .single();
+
+      if (profile && profile.onboarding_completed === false) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/onboarding/name";
+        url.search = "";
+        url.searchParams.set("next", pathname + search);
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   return response;

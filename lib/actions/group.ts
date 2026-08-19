@@ -119,25 +119,37 @@ export async function joinGroup(inviteCode: string) {
     .eq("user_id", user.id)
     .single();
 
-  if (existing) {
-    // Already a member, just redirect
-    revalidatePath("/groups");
-    redirect(`/groups/${group.id}`);
-  }
+  if (!existing) {
+    // Join the group
+    const { error: joinError } = await supabase.from("group_members").insert({
+      group_id: group.id,
+      user_id: user.id,
+      role: "member",
+    });
 
-  // Join the group
-  const { error: joinError } = await supabase.from("group_members").insert({
-    group_id: group.id,
-    user_id: user.id,
-    role: "member",
-  });
-
-  if (joinError) {
-    console.error("Join error:", joinError);
-    throw new Error("Failed to join group");
+    if (joinError) {
+      console.error("Join error:", joinError);
+      throw new Error("Failed to join group");
+    }
   }
 
   revalidatePath("/groups");
+  revalidatePath(`/groups/${group.id}`);
+
+  // If they haven't uploaded a schedule yet, send them there first —
+  // the upload flow will land them straight on this group's weekly
+  // schedule once they're done, instead of their personal one.
+  const { data: schedule } = await supabase
+    .from("schedules")
+    .select("id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (!schedule) {
+    redirect(`/schedule/upload?groupId=${group.id}`);
+  }
+
   redirect(`/groups/${group.id}`);
 }
 

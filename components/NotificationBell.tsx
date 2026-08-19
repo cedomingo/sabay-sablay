@@ -157,7 +157,7 @@ export default function NotificationBell({ initialCount = 0 }: NotificationBellP
       {open && (
         <div
           ref={panelRef}
-          className="absolute right-0 top-full z-50 mt-2 w-[380px] max-h-[480px] overflow-hidden rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] shadow-elevated"
+          className="absolute right-0 top-full z-[90] mt-2 w-[380px] max-h-[480px] overflow-hidden rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] shadow-elevated"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[#D8D6CD] px-5 py-4">
