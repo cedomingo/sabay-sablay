@@ -10,7 +10,7 @@ import {
   MapPin,
   CalendarRange,
 } from "lucide-react";
-import { createPersonalTask, type Task } from "@/lib/actions/tasks";
+import { createPersonalTask, createGroupTask, type Task } from "@/lib/actions/tasks";
 import { useOptimisticAction } from "@/lib/hooks/use-optimistic-action";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -24,6 +24,12 @@ const BAR_HEIGHT = 16; // px
 
 interface CalendarViewProps {
   initialTasks: Task[];
+  /**
+   * When set, this calendar is a group's Calendar tab: new tasks are
+   * created as group tasks (visible to every member, and reflected on
+   * each member's personal calendar) instead of personal ones.
+   */
+  groupId?: string;
 }
 
 interface RangedEvent {
@@ -144,7 +150,7 @@ function computeWeekSegments(
   return { segments, laneCount: laneEnds.length };
 }
 
-export default function CalendarView({ initialTasks }: CalendarViewProps) {
+export default function CalendarView({ initialTasks, groupId }: CalendarViewProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const { run } = useOptimisticAction<Task[]>(setTasks);
 
@@ -305,7 +311,7 @@ export default function CalendarView({ initialTasks }: CalendarViewProps) {
         {
           id: tempId,
           owner_id: "",
-          group_id: null,
+          group_id: groupId || null,
           title,
           description: trimmedDescription || null,
           due_at: dueAt,
@@ -320,13 +326,22 @@ export default function CalendarView({ initialTasks }: CalendarViewProps) {
       ],
       revert: (prev) => prev.filter((t) => t.id !== tempId),
       action: () =>
-        createPersonalTask({
-          title,
-          description: trimmedDescription || undefined,
-          dueAt,
-          room: trimmedRoom || undefined,
-          dueTime: time || undefined,
-        }),
+        groupId
+          ? createGroupTask({
+              groupId,
+              title,
+              description: trimmedDescription || undefined,
+              dueAt,
+              room: trimmedRoom || undefined,
+              dueTime: time || undefined,
+            })
+          : createPersonalTask({
+              title,
+              description: trimmedDescription || undefined,
+              dueAt,
+              room: trimmedRoom || undefined,
+              dueTime: time || undefined,
+            }),
       errorMessage: "Couldn't add that task.",
     });
   }
@@ -365,7 +380,7 @@ export default function CalendarView({ initialTasks }: CalendarViewProps) {
         {
           id: tempId,
           owner_id: "",
-          group_id: null,
+          group_id: groupId || null,
           title,
           description: trimmedDescription || null,
           due_at: dueAt,
@@ -380,12 +395,20 @@ export default function CalendarView({ initialTasks }: CalendarViewProps) {
       ],
       revert: (prev) => prev.filter((t) => t.id !== tempId),
       action: () =>
-        createPersonalTask({
-          title,
-          description: trimmedDescription || undefined,
-          dueAt,
-          endDate: endKey,
-        }),
+        groupId
+          ? createGroupTask({
+              groupId,
+              title,
+              description: trimmedDescription || undefined,
+              dueAt,
+              endDate: endKey,
+            })
+          : createPersonalTask({
+              title,
+              description: trimmedDescription || undefined,
+              dueAt,
+              endDate: endKey,
+            }),
       errorMessage: "Couldn't add that event.",
     });
   }

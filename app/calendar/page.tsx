@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { LayoutGrid, LogOut, Users, ListChecks, CalendarDays } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
-import { getPersonalTasks } from "@/lib/actions/tasks";
+import { getAllVisibleTasks } from "@/lib/actions/tasks";
 import CalendarView from "./CalendarView";
 import Link from "next/link";
 
@@ -23,7 +23,7 @@ export default async function CalendarPage() {
 
   if (!user) redirect("/auth/login");
 
-  const tasks = await getPersonalTasks();
+  const tasks = await getAllVisibleTasks();
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">

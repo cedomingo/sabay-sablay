@@ -68,6 +68,60 @@ export async function getPersonalTasks(): Promise<Task[]> {
   return (tasks || []) as Task[];
 }
 
+/**
+ * Get every task visible on the user's personal calendar: their own
+ * personal tasks, plus every open+done task from every group they
+ * belong to. This is what makes a group task "reflect in your personal
+ * schedule" once someone adds it on the group's calendar tab.
+ */
+export async function getAllVisibleTasks(): Promise<Task[]> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: personalTasks, error: personalError } = await supabase
+    .from("tasks")
+    .select("*, groups!tasks_group_id_fkey(id, name)")
+    .is("group_id", null)
+    .eq("owner_id", user.id);
+
+  if (personalError) {
+    console.error("Fetch personal tasks error:", personalError);
+  }
+
+  const { data: memberships } = await supabase
+    .from("group_members")
+    .select("group_id")
+    .eq("user_id", user.id);
+
+  let groupTasks: Task[] = [];
+  if (memberships && memberships.length > 0) {
+    const groupIds = memberships.map((m) => m.group_id);
+    const { data: gt, error: groupError } = await supabase
+      .from("tasks")
+      .select("*, groups!tasks_group_id_fkey(id, name)")
+      .in("group_id", groupIds);
+
+    if (groupError) {
+      console.error("Fetch group tasks for calendar error:", groupError);
+    }
+    groupTasks = (gt || []) as Task[];
+  }
+
+  const all = [...((personalTasks || []) as Task[]), ...groupTasks];
+  all.sort((a, b) => {
+    if (!a.due_at) return 1;
+    if (!b.due_at) return -1;
+    return new Date(a.due_at).getTime() - new Date(b.due_at).getTime();
+  });
+
+  return all;
+}
+
 /** Get upcoming personal + group tasks sorted by due date. */
 export async function getUpcomingTasks(limit = 10): Promise<Task[]> {
   const supabase = createClient();
@@ -165,6 +219,42 @@ export async function getGroupTasks(groupId: string): Promise<Task[]> {
   return (tasks || []) as unknown as Task[];
 }
 
+/**
+ * Get a group's tasks for the group's Calendar tab. Same access check
+ * as getGroupTasks, but unordered by status so ranged/timed events sit
+ * naturally on the calendar grid.
+ */
+export async function getGroupCalendarTasks(groupId: string): Promise<Task[]> {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: membership } = await supabase
+    .from("group_members")
+    .select("group_id")
+    .eq("group_id", groupId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!membership) throw new Error("Not a member of this group");
+
+  const { data: tasks, error } = await supabase
+    .from("tasks")
+    .select(`*, profiles!tasks_owner_id_fkey(full_name, avatar_url)`)
+    .eq("group_id", groupId);
+
+  if (error) {
+    console.error("Fetch group calendar tasks error:", error);
+    return [];
+  }
+
+  return (tasks || []) as unknown as Task[];
+}
+
 /** Get group members for assignment dropdown. */
 export async function getGroupMembers(groupId: string) {
   const supabase = createClient();
@@ -238,19 +328,31 @@ export async function createPersonalTask({
   revalidatePath("/calendar");
 }
 
-/** Create a new group task. */
+/**
+ * Create a new group task, visible to every member. Accepts the same
+ * calendar fields as createPersonalTask (room, time-of-day, multi-day
+ * range) so it can be created from the group's Calendar tab, plus the
+ * task-board-only assigneeId.
+ */
 export async function createGroupTask({
   groupId,
   title,
   description,
   dueAt,
   assigneeId,
+  room,
+  dueTime,
+  endDate,
 }: {
   groupId: string;
   title: string;
   description?: string;
   dueAt?: string;
   assigneeId?: string;
+  room?: string;
+  dueTime?: string;
+  /** Inclusive end date ("YYYY-MM-DD") for a multi-day (ranged) event. */
+  endDate?: string;
 }) {
   const supabase = createClient();
 
@@ -267,6 +369,9 @@ export async function createGroupTask({
     description: description || null,
     due_at: dueAt || null,
     assignee_id: assigneeId || null,
+    room: room || null,
+    due_time: dueTime || null,
+    end_date: endDate || null,
   });
 
   if (error) {
@@ -275,6 +380,9 @@ export async function createGroupTask({
   }
 
   revalidatePath(`/groups/${groupId}/tasks`);
+  revalidatePath(`/groups/${groupId}`);
+  // Group tasks also show up on each member's personal calendar.
+  revalidatePath("/calendar");
 }
 
 /** Toggle task status between 'open' and 'done'. */
