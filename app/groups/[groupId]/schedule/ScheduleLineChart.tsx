@@ -329,7 +329,7 @@ export default function ScheduleLineChart({
                 onChange={(e) => setShowTasks(e.target.checked)}
                 className="h-3.5 w-3.5 rounded border-[#B9BDB4] accent-[#214746]"
               />
-              Show Tasks
+              Show Group Tasks
             </label>
 
             {/* Legend */}
