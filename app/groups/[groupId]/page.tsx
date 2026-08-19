@@ -8,13 +8,16 @@ import { getCourseMates } from "@/lib/actions/course-mates";
 import GroupScheduleGrid from "./schedule/GroupScheduleGrid";
 import CalendarView from "@/app/calendar/CalendarView";
 import GroupTabs from "./GroupTabs";
+import CreatedGroupOverlay from "./CreatedGroupOverlay";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 
 export default async function GroupDetailPage({
   params,
+  searchParams,
 }: {
   params: { groupId: string };
+  searchParams?: { created?: string };
 }) {
   const { groupId } = params;
 
@@ -52,8 +55,17 @@ export default async function GroupDetailPage({
     getGroupCalendarTasks(groupId).catch(() => []),
   ]);
 
+  const justCreated = searchParams?.created === "1";
+
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
+      {justCreated && (
+        <CreatedGroupOverlay
+          groupName={group.name}
+          inviteCode={group.invite_code}
+          groupId={groupId}
+        />
+      )}
       <AppHeader
         maxWidth="max-w-6xl"
         navItems={[
