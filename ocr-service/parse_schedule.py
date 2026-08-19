@@ -90,6 +90,17 @@ def find_day_columns(words, img_w):
         for idx, name in enumerate(day_names):
             if name not in centers:
                 centers[name] = c0 + step * (idx - i0)
+    else:
+        # Fewer than 2 header words recognized (e.g. a low-res screenshot,
+        # a cropped header, or a schedule that doesn't match the expected
+        # "Time | Mon..Sun" template) — there's no way to interpolate
+        # column positions. Fail with a clear message instead of a bare
+        # KeyError a few lines down.
+        raise ValueError(
+            "Couldn't read the day-column headers (Time/Mon/Tue/.../Sun) "
+            "from this image. Make sure the full schedule grid, including "
+            "the header row, is visible and not cropped or blurry."
+        )
     # boundaries = midpoints between consecutive centers
     ordered_centers = [centers[n] for n in day_names]
     bounds = [0.0]
@@ -192,6 +203,19 @@ def parse_schedule(image_path):
     t = time.perf_counter()
     checkmarks = find_checkmarks(arr)
     timings['checkmark_detect'] = time.perf_counter() - t
+
+    if not rows:
+        raise ValueError(
+            "Couldn't read any time-slot rows from the left-hand 'Time' "
+            "column. Make sure the full schedule grid is visible and the "
+            "image isn't cropped or too low-resolution to read."
+        )
+    if not checkmarks:
+        raise ValueError(
+            "Couldn't detect any green checkmarks in this image — no "
+            "occupied schedule cells were found. Make sure you uploaded "
+            "the schedule grid screenshot, not a cropped or edited version."
+        )
 
     # --- Cell prep: cheap, CPU-light work (column/row lookup, cropping,
     # upscaling). Done up front and sequentially so every cell is ready

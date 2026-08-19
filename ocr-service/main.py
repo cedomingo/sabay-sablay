@@ -72,6 +72,18 @@ async def parse(
         # every other in-flight request on this worker for the whole parse.
         # Offload it to a thread so the loop stays free.
         result = await asyncio.to_thread(_run_parser, tmp_path)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Without this, any bug in parse_schedule.py (e.g. a schedule image
+        # that doesn't match the expected layout) crashes to a bare 500
+        # with no JSON body — the Next.js side then can't show anything
+        # more useful than "Failed to parse schedule". Return a real
+        # detail message instead so the actual cause is visible end to end.
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not parse this schedule image: {exc}",
+        )
     finally:
         try:
             os.unlink(tmp_path)

@@ -70,7 +70,21 @@ export async function parseScheduleImage(imageFile: File) {
   }
 
   if (!res.ok) {
-    throw new Error(`OCR /parse failed: ${res.status}`);
+    // FastAPI's HTTPException body is {"detail": "..."} — surface it so
+    // the real cause (bad content-type, invalid/missing X-Internal-Key,
+    // an unhandled crash inside parse_schedule.py, etc.) shows up instead
+    // of just a bare status code.
+    let detail = "";
+    try {
+      const body = await res.json();
+      detail = body?.detail || body?.error || "";
+    } catch {
+      // Response wasn't JSON (e.g. Render's own gateway error page) —
+      // fall back to status text only.
+    }
+    throw new Error(
+      `OCR /parse failed: ${res.status}${detail ? ` — ${detail}` : ""}`
+    );
   }
 
   return res.json();

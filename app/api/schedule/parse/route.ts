@@ -73,9 +73,30 @@ export async function POST(request: Request) {
       image_path: fileName,
     });
   } catch (error) {
+    // Log the full error server-side (visible in Vercel function logs) —
+    // the message below is what actually reaches the browser, so without
+    // this every failure mode looks identical from the client.
     console.error("Parse error:", error);
+
+    const message = error instanceof Error ? error.message : String(error);
+
+    // Config problems (missing/misconfigured OCR_SERVICE_URL/KEY) throw
+    // before any request ever reaches Render — surface that distinctly so
+    // it isn't confused with an actual OCR/network failure. Check
+    // /api/health to confirm which env vars are set on this deploy.
+    if (message.includes("OCR_SERVICE_URL") || message.includes("OCR_SERVICE_KEY")) {
+      return NextResponse.json(
+        {
+          error:
+            "OCR service is not configured on this deployment (missing " +
+            "OCR_SERVICE_URL/OCR_SERVICE_KEY). Check /api/health.",
+        },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
-      { error: "Failed to parse schedule" },
+      { error: `Failed to parse schedule: ${message}` },
       { status: 500 }
     );
   }

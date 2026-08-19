@@ -3,4 +3,5 @@ uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 pytesseract==0.3.13
 scipy==1.14.1
+numpy==2.0.1
 Pillow==10.4.0
