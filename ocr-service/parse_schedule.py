@@ -171,12 +171,8 @@ def parse_schedule(image_path):
 
     checkmarks = find_checkmarks(arr)
 
-    # Sort by row (y) then x, so for any checkmark we can look ahead to the
-    # next one on the same row — used below to widen text crops safely.
-    checkmarks_sorted = sorted(checkmarks, key=lambda b: (b[1], b[0]))
-
     entries = []
-    for idx, (x0, y0, x1, y1) in enumerate(checkmarks_sorted):
+    for (x0, y0, x1, y1) in checkmarks:
         cx = (x0 + x1) / 2
         cy = (y0 + y1) / 2
 
@@ -192,22 +188,7 @@ def parse_schedule(image_path):
         row = rows[row_idx]
 
         crop_left = x1 + 2
-        # The course text for a class often runs right up to (or slightly
-        # past) the day column's boundary in real screenshots. Hard-clipping
-        # exactly at col['right'] truncates that text (verified: it cut
-        # "THV-6" down to "T", which OCR then misread as "7"). Instead,
-        # extend the crop toward the next checkmark on the same row if
-        # there is one close by, otherwise allow generous overflow capped
-        # at the image edge — this only risks grabbing extra whitespace,
-        # not another class's text, since same-row checkmarks are rare and
-        # handled explicitly here.
-        max_right = img_w
-        for other in checkmarks_sorted[idx + 1:]:
-            ox0, oy0, ox1, oy1 = other
-            if abs(oy0 - y0) < 15:  # same row
-                max_right = ox0 - 4
-                break
-        crop_right = min(int(col['right'] + col['right'] - col['left']), max_right, img_w)
+        crop_right = int(col['right']) - 2
         crop_top = max(0, y0 - 6)
         crop_bottom = y1 + 20  # allow for two-line wrapped text within the cell
         if crop_right <= crop_left:
@@ -240,6 +221,19 @@ def parse_schedule(image_path):
             m['_last_row_idx'] = e['row_idx']
             merged.append(m)
 
+    result_entries = []
+    for m in merged:
+        subject, number, section = split_course(m['course_raw'])
+        result_entries.append({
+            'day': m['day'],
+            'start': m['start'],
+            'end': m['end'],
+            'course': m['course_raw'],
+            'subject': subject,
+            'number': number,
+            'section': section,
+        })
+
     def time_to_minutes(t):
         m = re.match(r'(\d{1,2}):(\d{2})(AM|PM)', t.upper())
         if not m:
@@ -251,23 +245,8 @@ def parse_schedule(image_path):
             h = 12 if h == 12 else h + 12
         return h * 60 + mnt
 
-    result_entries = []
-    for m in merged:
-        subject, number, section = split_course(m['course_raw'])
-        result_entries.append({
-            'day': m['day'],
-            'start': m['start'],
-            'end': m['end'],
-            'start_minutes': time_to_minutes(m['start']),
-            'end_minutes': time_to_minutes(m['end']),
-            'course': m['course_raw'],
-            'subject': subject,
-            'number': number,
-            'section': section,
-        })
-
     day_order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    result_entries.sort(key=lambda e: (day_order.index(e['day']), e['start_minutes']))
+    result_entries.sort(key=lambda e: (day_order.index(e['day']), time_to_minutes(e['start'])))
 
     return {
         'total_units': total_units,
