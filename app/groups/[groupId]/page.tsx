@@ -79,6 +79,11 @@ export default async function GroupDetailPage({
               )}
             </div>
             <div className="flex items-center gap-2">
+              {isOwner && (
+                <span className="rounded-full bg-[#F6D486] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#4C3911]">
+                  Owner
+                </span>
+              )}
               <Link
                 href={`/groups/${groupId}/settings`}
                 className="grid h-8 w-8 place-items-center rounded-lg text-[#A9D8CA] hover:bg-[#2B5855]"
@@ -86,11 +91,6 @@ export default async function GroupDetailPage({
               >
                 <Cog size={16} />
               </Link>
-              {isOwner && (
-                <span className="rounded-full bg-[#F6D486] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#4C3911]">
-                  Owner
-                </span>
-              )}
               <div className="rounded-full border border-[#A9D8CA]/25 bg-[#2B5855] px-3 py-1.5">
                 <span className="flex items-center gap-1.5 font-mono text-xs text-[#A9D8CA]">
                   <Users size={12} />

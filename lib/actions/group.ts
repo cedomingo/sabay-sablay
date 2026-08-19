@@ -165,6 +165,51 @@ export async function joinGroup(inviteCode: string) {
 }
 
 // ============================================================
+// Update Group (owner only)
+// ============================================================
+
+export async function updateGroup(
+  groupId: string,
+  { name, description }: { name?: string; description?: string | null }
+) {
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Verify the caller is the owner
+  const { data: group } = await supabase
+    .from("groups")
+    .select("owner_id")
+    .eq("id", groupId)
+    .single();
+
+  if (!group || group.owner_id !== user.id) {
+    throw new Error("Only the group owner can edit group settings");
+  }
+
+  const updates: Record<string, any> = {};
+  if (name !== undefined) updates.name = name;
+  if (description !== undefined) updates.description = description;
+
+  const { error } = await supabase
+    .from("groups")
+    .update(updates)
+    .eq("id", groupId);
+
+  if (error) {
+    console.error("Update group error:", error);
+    throw new Error("Failed to update group");
+  }
+
+  revalidatePath(`/groups/${groupId}`);
+  revalidatePath("/groups");
+}
+
+// ============================================================
 // Leave Group
 // ============================================================
 

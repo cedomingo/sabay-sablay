@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Plus, X, Check, Users } from "lucide-react";
+import { Plus, X, Check, Users, Copy, ExternalLink, Link2 } from "lucide-react";
 import { createGroup } from "@/lib/actions/group";
 
 interface CreateGroupModalProps {
@@ -11,23 +10,42 @@ interface CreateGroupModalProps {
 }
 
 export default function CreateGroupModal({ variant = "button" }: CreateGroupModalProps) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [success, setSuccess] = useState<{ groupId: string; groupName: string; inviteCode: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
   function reset() {
     setName("");
     setDescription("");
     setError(null);
+    setSuccess(null);
+    setCopied(false);
   }
 
   function handleClose() {
     if (loading) return;
     setOpen(false);
     reset();
+  }
+
+  async function handleCopyInvite() {
+    if (!success) return;
+    const url = `${window.location.origin}/join/${success.inviteCode}`;
+    const name = success.groupName;
+    const text = `Let's track our schedules together!\n\nSomeone has invited you to join ${name}\n${url}`;
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleGoToGroup() {
+    if (!success) return;
+    window.location.href = `/groups/${success.groupId}`;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -46,9 +64,7 @@ export default function CreateGroupModal({ variant = "button" }: CreateGroupModa
         name: name.trim(),
         description: description.trim() || undefined,
       });
-      setOpen(false);
-      reset();
-      router.push(`/groups/${result.groupId}`);
+      setSuccess(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create group");
     } finally {
@@ -81,9 +97,66 @@ export default function CreateGroupModal({ variant = "button" }: CreateGroupModa
         >
           <div
             className="w-full max-w-lg rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-6 shadow-elevated md:p-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-                {/* Create Form */}
+            onClick={(e) => e.stopPropagation()}              >
+              {success ? (
+                <div className="text-center">
+                  <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#8DDDD0] text-[#163D3A]">
+                    <Check size={28} />
+                  </div>
+                  <h2 className="mt-4 font-display text-2xl font-semibold text-[#214746]">
+                    Created Group {success.groupName}!
+                  </h2>
+                  <p className="mt-2 text-sm text-[#717972]">
+                    Copy the link to invite your friends below:
+                  </p>
+
+                  {/* Invite Link */}
+                  <div className="mt-6 rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] p-4">
+                    <div className="flex items-center gap-2 text-xs text-[#87908A]">
+                      <Link2 size={12} />
+                      <span>Invite link</span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <code className="flex-1 truncate rounded-lg border border-[#D0CEC4] bg-white px-3 py-2.5 font-mono text-sm font-bold text-[#214746]">
+                        {window.location.origin}/join/{success.inviteCode}
+                      </code>
+                      <button
+                        onClick={handleCopyInvite}
+                        className="inline-flex items-center gap-2 rounded-xl bg-[#214746] px-4 py-2.5 text-sm font-semibold text-[#F4F1E9] transition-colors hover:bg-[#2B5855]"
+                      >
+                        {copied ? (
+                          <>
+                            <Check size={14} />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={14} />
+                            Copy
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex items-center justify-center gap-3">
+                    <button
+                      onClick={handleGoToGroup}
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#F4A28C] px-6 py-3 text-sm font-semibold text-[#512E2B] transition-transform hover:-translate-y-0.5"
+                    >
+                      <ExternalLink size={14} />
+                      Go to group
+                    </button>
+                    <button
+                      onClick={handleClose}
+                      className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5]"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>{/* Create Form */}
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-4">
                     <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#C9B9E9] text-[#34264F]">
@@ -124,7 +197,7 @@ export default function CreateGroupModal({ variant = "button" }: CreateGroupModa
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         placeholder="e.g. BS CS 2-A Block"
-                        className="w-full rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] px-4 py-3 text-sm outline-none placeholder:text-[#9AA19B] focus:border-[#56B9AC]"
+                        className="w-full rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] px-4 py-3 text-sm text-[#214746] outline-none placeholder:text-[#9AA19B] focus:border-[#56B9AC]"
                         maxLength={100}
                         required
                       />
@@ -143,7 +216,7 @@ export default function CreateGroupModal({ variant = "button" }: CreateGroupModa
                         onChange={(e) => setDescription(e.target.value)}
                         placeholder="What's this group for?"
                         rows={3}
-                        className="w-full rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] px-4 py-3 text-sm outline-none placeholder:text-[#9AA19B] focus:border-[#56B9AC] resize-none"
+                        className="w-full rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] px-4 py-3 text-sm text-[#214746] outline-none placeholder:text-[#9AA19B] focus:border-[#56B9AC] resize-none"
                         maxLength={300}
                       />
                     </div>
@@ -178,6 +251,8 @@ export default function CreateGroupModal({ variant = "button" }: CreateGroupModa
                     </button>
                   </div>
                 </form>
+              </>
+              )}
           </div>
         </div>
       )}

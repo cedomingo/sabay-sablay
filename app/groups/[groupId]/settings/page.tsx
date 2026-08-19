@@ -5,6 +5,7 @@ import { getGroup, leaveGroup, deleteGroup } from "@/lib/actions/group";
 import GroupMembersList from "@/components/GroupMembersList";
 import SubmitButton from "@/components/SubmitButton";
 import InviteButton from "@/components/InviteButton";
+import GroupInfoForm from "./GroupInfoForm";
 import Link from "next/link";
 import AppHeader from "@/components/AppHeader";
 
@@ -177,6 +178,14 @@ export default async function GroupSettingsPage({
 
               <InviteButton inviteCode={group.invite_code} />
             </div>
+
+            {/* Group Info (editable by owner) */}
+            <GroupInfoForm
+              groupId={groupId}
+              initialName={group.name}
+              initialDescription={group.description}
+              isOwner={isOwner}
+            />
 
             {/* Actions */}
             <div className="rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-5">
