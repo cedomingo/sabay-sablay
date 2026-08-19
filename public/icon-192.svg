@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="32" fill="#214746"/>
+  <rect x="32" y="48" width="128" height="96" rx="12" fill="#F4F1E9" opacity="0.15"/>
+  <rect x="40" y="56" width="112" height="80" rx="8" fill="#F8F6F0"/>
+  <!-- Grid lines -->
+  <line x1="40" y1="76" x2="152" y2="76" stroke="#D8D6CD" stroke-width="1"/>
+  <line x1="40" y1="96" x2="152" y2="96" stroke="#D8D6CD" stroke-width="1"/>
+  <line x1="40" y1="116" x2="152" y2="116" stroke="#D8D6CD" stroke-width="1"/>
+  <line x1="62" y1="56" x2="62" y2="136" stroke="#D8D6CD" stroke-width="1"/>
+  <line x1="84" y1="56" x2="84" y2="136" stroke="#D8D6CD" stroke-width="1"/>
+  <line x1="106" y1="56" x2="106" y2="136" stroke="#D8D6CD" stroke-width="1"/>
+  <line x1="128" y1="56" x2="128" y2="136" stroke="#D8D6CD" stroke-width="1"/>
+  <!-- Class blocks -->
+  <rect x="42" y="58" width="18" height="16" rx="3" fill="#F4A28C"/>
+  <rect x="64" y="78" width="18" height="16" rx="3" fill="#8DDDD0"/>
+  <rect x="86" y="58" width="18" height="16" rx="3" fill="#C9B9E9"/>
+  <rect x="108" y="98" width="18" height="16" rx="3" fill="#F6D486"/>
+  <rect x="64" y="98" width="18" height="16" rx="3" fill="#D9E7DE"/>
+  <rect x="130" y="58" width="18" height="16" rx="3" fill="#8DDDD0"/>
+  <!-- Header accent -->
+  <rect x="32" y="48" width="128" height="6" rx="3" fill="#F4A28C"/>
+</svg>

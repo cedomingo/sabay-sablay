@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+@layer base {
+  body {
+    @apply font-body antialiased bg-paper text-ink;
+  }
+}
+
+@layer components {
+  .grain {
+    position: relative;
+  }
+  .grain::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.13;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
+    border-radius: inherit;
+  }
+
+  .paper-grid {
+    background-image:
+      linear-gradient(#d9d8d0 1px, transparent 1px),
+      linear-gradient(90deg, #d9d8d0 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .schedule-cell {
+    transition: background-color 0.18s ease, transform 0.18s ease;
+  }
+  .schedule-cell:hover {
+    background: #E7EBE5;
+  }
+}
