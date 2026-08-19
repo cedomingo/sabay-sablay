@@ -88,8 +88,6 @@ export default function OnboardingNameForm({
       </button>
 
       <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-xs text-[#A9D8CA]">
-        Next up: uploading your timetable
-        <ArrowRight size={12} />
       </p>
     </form>
   );

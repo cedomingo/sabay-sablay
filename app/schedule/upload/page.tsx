@@ -104,7 +104,7 @@ function UploadPageInner() {
               <LayoutGrid size={18} />
             </div>
             <span className="font-display text-sm font-bold tracking-tight">
-              Schedule Planner
+              Sabay Sablay
             </span>
           </div>
           <h1 className="mt-6 font-display text-3xl font-semibold tracking-tight md:text-4xl">

@@ -54,7 +54,7 @@ export default function LoginPage({
               <LayoutGrid size={20} />
             </div>
             <span className="font-display text-lg font-bold tracking-tight">
-              Schedule Planner
+              Sabay Sablay
             </span>
           </div>
 

@@ -51,7 +51,7 @@ export default async function ProfilePage() {
                 <LayoutGrid size={18} />
               </div>
               <span className="font-display text-sm font-bold tracking-tight">
-                Schedule Planner
+                Sabay Sablay
               </span>
             </div>
             <div className="flex items-center gap-2">

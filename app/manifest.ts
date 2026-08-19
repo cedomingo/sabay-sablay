@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Schedule Planner",
-    short_name: "SchedPlanner",
+    name: "Sabay Sablay",
+    short_name: "SabaySablay",
     description:
       "Group schedule visualizer and planner for students. Upload your timetable, see combined schedules, track tasks, and collaborate.",
     start_url: "/schedule",

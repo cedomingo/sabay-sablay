@@ -29,7 +29,7 @@ export default async function NotificationsPage() {
                 <LayoutGrid size={18} />
               </div>
               <span className="font-display text-sm font-bold tracking-tight">
-                Schedule Planner
+                Sabay Sablay
               </span>
             </div>
             <form action={handleSignOut}>

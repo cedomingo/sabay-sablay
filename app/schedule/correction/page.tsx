@@ -206,7 +206,7 @@ export default function CorrectionPage() {
               <LayoutGrid size={18} />
             </div>
             <span className="font-display text-sm font-bold tracking-tight">
-              Schedule Planner
+              Sabay Sablay
             </span>
           </div>
           <div className="mt-4 flex items-end justify-between">

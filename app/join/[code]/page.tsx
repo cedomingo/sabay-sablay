@@ -54,7 +54,7 @@ export default async function JoinGroupPage({
                 <LayoutGrid size={18} />
               </div>
               <span className="font-display text-sm font-bold tracking-tight">
-                Schedule Planner
+                Sabay Sablay
               </span>
             </div>
           </div>
@@ -108,7 +108,7 @@ export default async function JoinGroupPage({
                 <LayoutGrid size={18} />
               </div>
               <span className="font-display text-sm font-bold tracking-tight">
-                Schedule Planner
+                Sabay Sablay
               </span>
             </div>
             <form action={handleSignOut}>

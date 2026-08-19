@@ -3,13 +3,13 @@ import "./globals.css";
 import Toast from "@/components/Toast";
 
 export const metadata: Metadata = {
-  title: "Schedule Planner",
+  title: "Sabay Sablay",
   description: "Group schedule visualizer and planner for students.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "SchedPlanner",
+    title: "SabaySablay",
   },
 };
 

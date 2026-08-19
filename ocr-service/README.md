@@ -1,4 +1,4 @@
-# Schedule Planner — OCR Service
+# Sabay Sablay — OCR Service
 
 Thin FastAPI wrapper around the existing `parse_schedule.py` script.
 Deployed to Render as its own service, called only from the Next.js

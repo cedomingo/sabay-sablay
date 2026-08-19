@@ -91,7 +91,7 @@ export async function GET() {
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Schedule Planner//EN",
+    "PRODID:-//Sabay Sablay//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     `X-WR-CALNAME:${escapeICS(schedule.label || "My Schedule")}`,

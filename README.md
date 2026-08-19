@@ -1,4 +1,4 @@
-# Schedule Planner
+# Sabay Sablay
 
 A schedule visualizer/planner for a group of students at one school.
 Students upload a screenshot of their class schedule, the app OCRs it into

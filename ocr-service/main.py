@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-app = FastAPI(title="Schedule Planner OCR Service")
+app = FastAPI(title="Sabay Sablay OCR Service")
 
 INTERNAL_KEY = os.environ.get("OCR_SERVICE_KEY")
 
