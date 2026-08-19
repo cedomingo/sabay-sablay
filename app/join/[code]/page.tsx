@@ -1,5 +1,4 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
 import { Users } from "lucide-react";
 import { joinGroup } from "@/lib/actions/group";
 import Link from "next/link";
@@ -86,18 +85,72 @@ export default async function JoinGroupPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect(`/auth/login?next=/join/${code}`);
-  }
-
   // Look up the group by invite code via the security-definer RPC —
   // groups is only directly selectable by existing members/owner now,
   // so a non-member resolving an invite link has to go through this.
+  // This RPC is also used for the logged-out preview below (it's the
+  // same public, read-only invite info as the metadata above), so it's
+  // safe to call before we know whether there's a user.
   const { data: groupRows, error } = await supabase.rpc(
     "get_group_by_invite_code",
     { p_invite_code: code }
   );
   const group = groupRows?.[0];
+
+  if (!user) {
+    // Don't hard-redirect here — this route needs to stay renderable for
+    // link-preview crawlers (see middleware.ts) and for logged-out humans
+    // who click the invite, so we show a preview and let them opt into
+    // signing in rather than bouncing them immediately.
+    return (
+      <main className="min-h-[100dvh] bg-[#F4F1E9]">
+        <AppHeader maxWidth="max-w-3xl" showNotificationBell={false} />
+
+        <div className="mx-auto max-w-3xl px-6 py-16 md:px-10">
+          <div className="rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-8 text-center shadow-card md:p-12">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#C9B9E9] text-[#34264F]">
+              <Users size={24} />
+            </div>
+
+            {error || !group ? (
+              <>
+                <h1 className="mt-6 font-display text-2xl font-semibold text-[#214746]">
+                  Invalid invite code
+                </h1>
+                <p className="mx-auto mt-2 max-w-sm text-sm text-[#717972]">
+                  This invite link doesn&apos;t match any group. Check the
+                  code and try again.
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="mt-6 font-display text-2xl font-semibold text-[#214746]">
+                  You&apos;ve been invited to
+                </h1>
+                <h2 className="mt-1 font-display text-3xl font-bold text-[#214746]">
+                  {group.name}
+                </h2>
+                {group.description && (
+                  <p className="mx-auto mt-3 max-w-md text-sm text-[#717972]">
+                    {group.description}
+                  </p>
+                )}
+              </>
+            )}
+
+            <div className="mt-8 space-y-3">
+              <Link
+                href={`/auth/login?next=${encodeURIComponent(`/join/${code}`)}`}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#F4A28C] px-6 py-3 text-sm font-semibold text-[#512E2B] transition-transform hover:-translate-y-0.5"
+              >
+                Sign in to join
+              </Link>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (error || !group) {
     return (

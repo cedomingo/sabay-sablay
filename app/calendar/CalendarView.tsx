@@ -54,6 +54,7 @@ interface RangedEvent {
   description: string | null;
   groupId?: string | null;
   groupName?: string | null;
+  status?: string;
 }
 
 interface BarSegment {
@@ -66,7 +67,14 @@ interface BarSegment {
   isPreview?: boolean;
   groupId?: string | null;
   groupName?: string | null;
+  status?: string;
 }
+
+// Done bars collapse to a slimmer strip (instead of the full BAR_HEIGHT)
+// so completed multi-day events visually recede without shifting other
+// lanes — the slim bar is vertically centered within the lane it was
+// already assigned.
+const DONE_BAR_HEIGHT = 8; // px
 
 function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -144,6 +152,7 @@ function computeWeekSegments(
       description: r.description,
       groupId: r.groupId,
       groupName: r.groupName,
+      status: r.status,
     });
   }
 
@@ -237,7 +246,12 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
       map.get(key)!.push(t);
     }
     for (const list of map.values()) {
-      list.sort((a, b) => (a.due_time || "").localeCompare(b.due_time || ""));
+      // Open tasks first (by time), done tasks collapsed to the bottom
+      // so they don't push open tasks out of the visible slots.
+      list.sort((a, b) => {
+        if (a.status !== b.status) return a.status === "done" ? 1 : -1;
+        return (a.due_time || "").localeCompare(b.due_time || "");
+      });
     }
     return map;
   }, [tasks]);
@@ -268,6 +282,7 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
         description: t.description,
         groupId: t.group_id,
         groupName: (t as any).groups?.name ?? null,
+        status: t.status,
       }));
   }, [tasks]);
 
@@ -643,6 +658,7 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
 
                         <div className="flex flex-1 flex-col gap-1 overflow-hidden">
                           {dayTasks.slice(0, 3).map((t) => {
+                            const isDone = t.status === "done";
                             const tColor = t.group_id
                               ? groupColorMap.get(t.group_id) || GROUP_COLORS[0]
                               : PERSONAL_COLOR;
@@ -659,9 +675,13 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                                 }}
                                 onMouseEnter={(e) => showTooltip(e, t.title, t.description ?? null, tSubtitle)}
                                 onMouseLeave={() => setTooltip(null)}
-                                className={`cursor-pointer truncate rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${tColor.bg} ${tColor.text} hover:brightness-95`}
+                                className={`cursor-pointer truncate rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                                  isDone
+                                    ? "bg-transparent text-[#9BA39B] line-through opacity-60 hover:opacity-90"
+                                    : `${tColor.bg} ${tColor.text} hover:brightness-95`
+                                }`}
                               >
-                                {t.due_time ? `${formatTime12h(t.due_time)} · ` : ""}
+                                {!isDone && t.due_time ? `${formatTime12h(t.due_time)} · ` : ""}
                                 {t.title}
                               </span>
                             );
@@ -683,50 +703,56 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                     className="pointer-events-none absolute inset-x-0"
                     style={{ top: BAR_TOP_OFFSET }}
                   >
-                    {segments.map((seg) => (
-                      <div
-                        key={seg.id}
-                        onPointerDown={seg.isPreview ? undefined : (e) => e.stopPropagation()}
-                        onClick={
-                          seg.isPreview
-                            ? undefined
-                            : (e) => {
-                                e.stopPropagation();
-                                const task = tasks.find((t) => t.id === seg.id);
-                                if (task) openDetailFor(task);
-                              }
-                        }
-                        onMouseEnter={
-                          seg.isPreview
-                            ? undefined
-                            : (e) => {
-                                const sub = seg.groupId
-                                  ? seg.groupName || "Group"
-                                  : "Personal";
-                                showTooltip(e, seg.title || "", seg.description ?? null, sub);
-                              }
-                        }
-                        onMouseLeave={seg.isPreview ? undefined : () => setTooltip(null)}
-                        className={`pointer-events-auto absolute flex items-center truncate rounded-md px-1.5 text-[10px] font-semibold ${
-                          seg.isPreview
-                            ? "border border-dashed border-[#56B9AC] bg-[#56B9AC]/25 text-[#214746]"
-                            : (() => {
-                                const c = seg.groupId
-                                  ? groupColorMap.get(seg.groupId) || GROUP_COLORS[0]
-                                  : PERSONAL_COLOR;
-                                return `cursor-pointer ${c.barBg} ${c.text} shadow-sm hover:brightness-95`;
-                              })()
-                        }`}
-                        style={{
-                          left: `calc(${(seg.startCol / 7) * 100}% + 3px)`,
-                          width: `calc(${((seg.endCol - seg.startCol + 1) / 7) * 100}% - 6px)`,
-                          top: seg.lane * LANE_HEIGHT,
-                          height: BAR_HEIGHT,
-                        }}
-                      >
-                        {!seg.isPreview && seg.title}
-                      </div>
-                    ))}
+                    {segments.map((seg) => {
+                      const isDone = !seg.isPreview && seg.status === "done";
+                      const segHeight = isDone ? DONE_BAR_HEIGHT : BAR_HEIGHT;
+                      return (
+                        <div
+                          key={seg.id}
+                          onPointerDown={seg.isPreview ? undefined : (e) => e.stopPropagation()}
+                          onClick={
+                            seg.isPreview
+                              ? undefined
+                              : (e) => {
+                                  e.stopPropagation();
+                                  const task = tasks.find((t) => t.id === seg.id);
+                                  if (task) openDetailFor(task);
+                                }
+                          }
+                          onMouseEnter={
+                            seg.isPreview
+                              ? undefined
+                              : (e) => {
+                                  const sub = seg.groupId
+                                    ? seg.groupName || "Group"
+                                    : "Personal";
+                                  showTooltip(e, seg.title || "", seg.description ?? null, sub);
+                                }
+                          }
+                          onMouseLeave={seg.isPreview ? undefined : () => setTooltip(null)}
+                          className={`pointer-events-auto absolute flex items-center truncate rounded-md px-1.5 text-[10px] font-semibold ${
+                            seg.isPreview
+                              ? "border border-dashed border-[#56B9AC] bg-[#56B9AC]/25 text-[#214746]"
+                              : isDone
+                              ? "cursor-pointer bg-[#D8D6CD] text-[#9BA39B] line-through opacity-60 hover:opacity-90"
+                              : (() => {
+                                  const c = seg.groupId
+                                    ? groupColorMap.get(seg.groupId) || GROUP_COLORS[0]
+                                    : PERSONAL_COLOR;
+                                  return `cursor-pointer ${c.barBg} ${c.text} shadow-sm hover:brightness-95`;
+                                })()
+                          }`}
+                          style={{
+                            left: `calc(${(seg.startCol / 7) * 100}% + 3px)`,
+                            width: `calc(${((seg.endCol - seg.startCol + 1) / 7) * 100}% - 6px)`,
+                            top: seg.lane * LANE_HEIGHT + (BAR_HEIGHT - segHeight) / 2,
+                            height: segHeight,
+                          }}
+                        >
+                          {!seg.isPreview && !isDone && seg.title}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -46,11 +46,18 @@ export async function middleware(request: NextRequest) {
   const isAuthRoute = pathname.startsWith("/auth");
   const isApiRoute = pathname.startsWith("/api");
   const isOnboardingRoute = pathname.startsWith("/onboarding");
+  // Invite links must stay reachable without a session: link-preview
+  // crawlers (Messenger, iMessage, Slack, etc.) never carry auth cookies,
+  // so gating this route here would always bounce them to /auth/login
+  // and strip out the per-invite OG title/description generated on the
+  // join page. The page itself renders a public invite preview and only
+  // asks for sign-in when the user actually tries to join.
+  const isJoinRoute = pathname.startsWith("/join/");
 
   // Redirect unauthenticated users away from protected routes, preserving
   // where they were headed (e.g. a group invite link) as `next` so we can
   // send them back there once they've signed in.
-  if (!user && !isAuthRoute && !isApiRoute) {
+  if (!user && !isAuthRoute && !isApiRoute && !isJoinRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
     url.search = "";
