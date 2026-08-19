@@ -13,7 +13,7 @@
 -- security-fixes migration.
 
 create or replace function public.is_group_member(p_group_id uuid, p_user_id uuid)
-returns booleannpx supabase link --project-ref 
+returns boolean
 language sql
 security definer
 set search_path = public
