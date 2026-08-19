@@ -17,6 +17,12 @@ export interface Task {
   status: "open" | "done";
   assignee_id: string | null;
   created_at: string;
+  // Calendar tab: optional room + raw time-of-day (null = no specific time)
+  room?: string | null;
+  due_time?: string | null;
+  // Calendar tab: multi-day events. When set, the task spans from
+  // due_at's date through end_date (inclusive) instead of a single day.
+  end_date?: string | null;
   // Joined fields (optional)
   profiles?: {
     full_name: string | null;
@@ -192,10 +198,17 @@ export async function createPersonalTask({
   title,
   description,
   dueAt,
+  room,
+  dueTime,
+  endDate,
 }: {
   title: string;
   description?: string;
   dueAt?: string;
+  room?: string;
+  dueTime?: string;
+  /** Inclusive end date ("YYYY-MM-DD") for a multi-day (ranged) event. */
+  endDate?: string;
 }) {
   const supabase = createClient();
 
@@ -211,6 +224,9 @@ export async function createPersonalTask({
     title,
     description: description || null,
     due_at: dueAt || null,
+    room: room || null,
+    due_time: dueTime || null,
+    end_date: endDate || null,
   });
 
   if (error) {
@@ -219,6 +235,7 @@ export async function createPersonalTask({
   }
 
   revalidatePath("/tasks");
+  revalidatePath("/calendar");
 }
 
 /** Create a new group task. */

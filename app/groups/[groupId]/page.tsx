@@ -8,7 +8,6 @@ import {
   Copy,
   LogOut,
   Trash2,
-  LogIn,
   Calendar,
   ListChecks,
   BookOpen,
@@ -18,6 +17,7 @@ import { getGroup, leaveGroup, deleteGroup } from "@/lib/actions/group";
 import NotificationBell from "@/components/NotificationBell";
 import GroupMembersList from "@/components/GroupMembersList";
 import SubmitButton from "@/components/SubmitButton";
+import InviteButton from "@/components/InviteButton";
 import Link from "next/link";
 
 /**
@@ -232,13 +232,7 @@ export default async function GroupDetailPage({
                 </p>
               </div>
 
-              <Link
-                href={`/join/${group.invite_code}`}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#B9BDB4] px-4 py-2.5 text-xs font-semibold text-[#52605C] hover:bg-[#E7EBE5]"
-              >
-                <LogIn size={14} />
-                View join page
-              </Link>
+              <InviteButton inviteCode={group.invite_code} />
             </div>
 
             {/* Combined Schedule */}

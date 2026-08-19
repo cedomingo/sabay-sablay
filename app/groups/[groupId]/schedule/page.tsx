@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { LayoutGrid, ArrowLeft, Users, LogOut } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
 import { getGroupSchedule } from "@/lib/actions/group-schedule";
-import HeatmapGrid from "./HeatmapGrid";
+import { getGroup } from "@/lib/actions/group";
+import { getGroupTasks } from "@/lib/actions/tasks";
+import ScheduleLineChart from "./ScheduleLineChart";
+import InviteButton from "@/components/InviteButton";
 import Link from "next/link";
 
 async function handleSignOut() {
@@ -26,6 +29,25 @@ export default async function GroupSchedulePage({
 
   if (!data) {
     redirect("/groups");
+  }
+
+  let inviteCode: string | null = null;
+  try {
+    const group = await getGroup(groupId);
+    inviteCode = group?.invite_code ?? null;
+  } catch {
+    inviteCode = null;
+  }
+
+  // Group tasks/deadlines/events for the "Show Tasks" overlay on the
+  // combined timeline (Batch F). Only open ones are worth plotting on
+  // a forward-looking schedule; tolerate failure so a tasks hiccup
+  // never breaks the schedule view itself.
+  let tasks: Awaited<ReturnType<typeof getGroupTasks>> = [];
+  try {
+    tasks = (await getGroupTasks(groupId)).filter((t) => t.status === "open" && t.due_at);
+  } catch {
+    tasks = [];
   }
 
   return (
@@ -80,6 +102,12 @@ export default async function GroupSchedulePage({
                     {data.memberCount} {data.memberCount === 1 ? "member" : "members"}
                   </span>
                 </div>
+                {inviteCode && (
+                  <InviteButton
+                    inviteCode={inviteCode}
+                    className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -87,7 +115,7 @@ export default async function GroupSchedulePage({
         <div className="absolute -bottom-16 -right-8 h-40 w-40 rounded-full border-[16px] border-[#F6D486]/20" />
       </div>
 
-      {/* Heatmap */}
+      {/* Schedule timeline */}
       <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
         {data.entries.length === 0 ? (
           <div className="paper-grid rounded-[22px] border border-[#D0CEC4] p-12 text-center">
@@ -99,7 +127,7 @@ export default async function GroupSchedulePage({
             </h2>
             <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-[#717972]">
               Group members need to upload their schedules first. Once they do,
-              the combined heatmap will show here.
+              the combined timeline will show here.
             </p>
             <Link
               href={`/groups/${groupId}`}
@@ -109,9 +137,11 @@ export default async function GroupSchedulePage({
             </Link>
           </div>
         ) : (
-          <HeatmapGrid
+          <ScheduleLineChart
             entries={data.entries}
+            members={data.members}
             memberCount={data.memberCount}
+            tasks={tasks}
           />
         )}
       </div>

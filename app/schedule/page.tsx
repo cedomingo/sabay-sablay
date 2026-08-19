@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { LayoutGrid, Upload, MapPin, Clock, LogOut, Users, ListChecks, Calendar, Download } from "lucide-react";
+import { LayoutGrid, Upload, MapPin, Clock, LogOut, Users, ListChecks, Calendar, CalendarDays, Download } from "lucide-react";
 import { revalidatePath } from "next/cache";
 import { getUpcomingTasks } from "@/lib/actions/tasks";
 import { checkDueDateNotifications } from "@/lib/actions/notifications";
@@ -191,6 +191,13 @@ export default async function SchedulePage() {
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell />
+              <a
+                href="/calendar"
+                className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+              >
+                <CalendarDays size={14} />
+                Calendar
+              </a>
               <a
                 href="/tasks"
                 className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
