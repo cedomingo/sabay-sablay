@@ -9,23 +9,19 @@ import PrivacyToggle from "@/components/PrivacyToggle";
 import SubmitButton from "@/components/SubmitButton";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-const TIME_LABELS = [
-  "7:00 AM",
-  "8:00 AM",
-  "9:00 AM",
-  "10:00 AM",
-  "11:00 AM",
-  "12:00 PM",
-  "1:00 PM",
-  "2:00 PM",
-  "3:00 PM",
-  "4:00 PM",
-  "5:00 PM",
-];
 
-// Start at 7:00 AM = 420 minutes, each row = 60 minutes
-const TIME_START = 420;
-const TIME_STEP = 60;
+// Timeline starts at 7:00 AM (420 minutes since midnight).
+// Hour marks are reference lines only — blocks are positioned by exact minute.
+const HOUR_START = 420;
+const DEFAULT_HOUR_END = 1020; // 5:00 PM baseline, extended if entries run later
+const PIXELS_PER_MINUTE = 1.2; // 72px per hour
+
+function formatHourLabel(minutes: number): string {
+  const h24 = Math.floor(minutes / 60);
+  const period = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:00 ${period}`;
+}
 
 const COLORS = [
   { bg: "bg-[#F4A28C]", text: "text-[#512E2B]", border: "border-[#DC7C66]" },
@@ -48,6 +44,53 @@ function getColorForSubject(subject: string) {
     hash = subject.charCodeAt(i) + ((hash << 5) - hash);
   }
   return COLORS[Math.abs(hash) % COLORS.length];
+}
+
+// Lays out a single day's entries on a continuous timeline. Entries that
+// don't overlap in time each get the full column width; entries that do
+// overlap are grouped into a cluster and placed side-by-side within it.
+function layoutDayEntries<T extends { start_minutes: number; end_minutes: number }>(
+  entries: T[]
+): Array<T & { col: number; colCount: number }> {
+  const sorted = [...entries].sort((a, b) => a.start_minutes - b.start_minutes);
+  const result: Array<T & { col: number; colCount: number }> = [];
+
+  let cluster: T[] = [];
+  let clusterEnd = -1;
+
+  const flushCluster = () => {
+    if (cluster.length === 0) return;
+    const colEnds: number[] = [];
+    for (const entry of cluster) {
+      let col = colEnds.findIndex((end) => end <= entry.start_minutes);
+      if (col === -1) {
+        colEnds.push(entry.end_minutes);
+        col = colEnds.length - 1;
+      } else {
+        colEnds[col] = entry.end_minutes;
+      }
+      result.push({ ...entry, col, colCount: 0 });
+    }
+    const colCount = colEnds.length;
+    for (let i = result.length - cluster.length; i < result.length; i++) {
+      result[i].colCount = colCount;
+    }
+    cluster = [];
+  };
+
+  for (const entry of sorted) {
+    if (cluster.length === 0 || entry.start_minutes < clusterEnd) {
+      cluster.push(entry);
+      clusterEnd = Math.max(clusterEnd, entry.end_minutes);
+    } else {
+      flushCluster();
+      cluster = [entry];
+      clusterEnd = entry.end_minutes;
+    }
+  }
+  flushCluster();
+
+  return result;
 }
 
 interface ScheduleEntry {
@@ -285,79 +328,123 @@ export default async function SchedulePage() {
             </div>
           </div>
 
-          {/* Grid Body */}
+          {/* Grid Body — continuous, time-based timeline (not a fixed-row table) */}
           <div className="min-w-[720px] overflow-x-auto p-3 md:p-5">
-            <div className="grid grid-cols-[74px_repeat(5,minmax(118px,1fr))]">
-              {/* Day Headers */}
-              <div className="h-12" />
-              {DAYS.map((day, i) => (
-                <div
-                  key={day}
-                  className={`border-b border-[#D8D6CD] px-2 pb-3 ${
-                    i === 0 ? "text-[#A45D42]" : ""
-                  }`}
-                >
-                  <p className="font-display text-sm font-semibold">{day}</p>
-                </div>
-              ))}
+            {(() => {
+              const maxEndMinutes = schedule.entries.length
+                ? Math.max(...schedule.entries.map((e) => e.end_minutes))
+                : DEFAULT_HOUR_END;
+              const hourEnd = Math.max(
+                DEFAULT_HOUR_END,
+                Math.ceil(maxEndMinutes / 60) * 60
+              );
+              const hours: number[] = [];
+              for (let h = HOUR_START; h <= hourEnd; h += 60) hours.push(h);
+              const timelineHeight = (hourEnd - HOUR_START) * PIXELS_PER_MINUTE;
 
-              {/* Time Rows */}
-              {TIME_LABELS.map((time, row) => (
-                <div key={time} className="contents">
-                  <div className="h-[74px] border-r border-[#D8D6CD] pr-3 pt-2 text-right font-mono text-[10px] text-[#87908A]">
-                    {time}
+              return (
+                <div className="grid grid-cols-[74px_repeat(5,minmax(118px,1fr))]">
+                  {/* Day Headers */}
+                  <div className="h-12" />
+                  {DAYS.map((day, i) => (
+                    <div
+                      key={day}
+                      className={`border-b border-[#D8D6CD] px-2 pb-3 ${
+                        i === 0 ? "text-[#A45D42]" : ""
+                      }`}
+                    >
+                      <p className="font-display text-sm font-semibold">{day}</p>
+                    </div>
+                  ))}
+
+                  {/* Time axis (reference labels only) */}
+                  <div
+                    className="relative border-r border-[#D8D6CD]"
+                    style={{ height: timelineHeight }}
+                  >
+                    {hours.map((h) => (
+                      <div
+                        key={h}
+                        className="absolute right-3 -translate-y-1/2 font-mono text-[10px] text-[#87908A]"
+                        style={{ top: (h - HOUR_START) * PIXELS_PER_MINUTE }}
+                      >
+                        {formatHourLabel(h)}
+                      </div>
+                    ))}
                   </div>
-                  {DAYS.map((day, col) => {
-                    const rowStart = TIME_START + row * TIME_STEP;
-                    const rowEnd = rowStart + TIME_STEP;
 
-                    // Find entries that overlap this cell
-                    const entry = schedule.entries.find((e) => {
-                      if (e.day !== day) return false;
-                      return e.start_minutes < rowEnd && e.end_minutes > rowStart;
-                    });
-
-                    const color = entry
-                      ? subjectColorMap.get(entry.subject) || COLORS[0]
-                      : null;
+                  {/* Day columns — each is a continuous vertical timeline */}
+                  {DAYS.map((day) => {
+                    const dayEntries = layoutDayEntries(
+                      schedule.entries.filter((e) => e.day === day)
+                    );
 
                     return (
                       <div
-                        key={`${day}-${row}`}
-                        className="schedule-cell relative h-[74px] border-b border-r border-[#E1DFD7] p-1.5"
+                        key={day}
+                        className="relative border-b border-r border-[#E1DFD7]"
+                        style={{ height: timelineHeight }}
                       >
-                        {entry && (
+                        {/* Hourly reference lines — pass behind blocks, never split them */}
+                        {hours.map((h) => (
                           <div
-                            className={`group relative z-10 h-full overflow-hidden rounded-xl border p-2 shadow-[0_2px_4px_rgba(45,60,50,.08)] ${
-                              entry.hidden ? "opacity-50 ring-1 ring-dashed ring-[#C77A68]" : ""
-                            } ${color?.bg} ${color?.text} ${color?.border}`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <p className="font-display text-xs font-bold leading-tight">
-                                {entry.subject} {entry.number}
-                                {entry.hidden && (
-                                  <span className="ml-1 text-[8px] font-normal opacity-70">(hidden)</span>
-                                )}
+                            key={h}
+                            className="pointer-events-none absolute left-0 right-0 border-t border-[#E1DFD7]"
+                            style={{ top: (h - HOUR_START) * PIXELS_PER_MINUTE }}
+                          />
+                        ))}
+
+                        {dayEntries.map((entry) => {
+                          const color = subjectColorMap.get(entry.subject) || COLORS[0];
+                          const top = (entry.start_minutes - HOUR_START) * PIXELS_PER_MINUTE;
+                          const height = Math.max(
+                            (entry.end_minutes - entry.start_minutes) * PIXELS_PER_MINUTE,
+                            22
+                          );
+                          const gap = 4;
+                          const leftPct = (entry.col / entry.colCount) * 100;
+                          const widthPct = 100 / entry.colCount;
+
+                          return (
+                            <div
+                              key={entry.id}
+                              className={`group absolute z-10 overflow-hidden rounded-xl border p-2 shadow-[0_2px_4px_rgba(45,60,50,.08)] ${
+                                entry.hidden ? "opacity-50 ring-1 ring-dashed ring-[#C77A68]" : ""
+                              } ${color.bg} ${color.text} ${color.border}`}
+                              style={{
+                                top,
+                                height,
+                                left: `calc(${leftPct}% + ${gap}px)`,
+                                width: `calc(${widthPct}% - ${gap * 2}px)`,
+                              }}
+                            >
+                              <div className="flex items-start justify-between">
+                                <p className="font-display text-xs font-bold leading-tight">
+                                  {entry.subject} {entry.number}
+                                  {entry.hidden && (
+                                    <span className="ml-1 text-[8px] font-normal opacity-70">(hidden)</span>
+                                  )}
+                                </p>
+                                <PrivacyToggle entryId={entry.id} initialHidden={entry.hidden} />
+                              </div>
+                              <p className="mt-0.5 font-mono text-[9px] opacity-75">
+                                {entry.start_display}–{entry.end_display}
                               </p>
-                              <PrivacyToggle entryId={entry.id} initialHidden={entry.hidden} />
+                              {entry.room && (
+                                <p className="mt-1 flex items-center gap-1 font-mono text-[9px] opacity-75">
+                                  <MapPin size={9} />
+                                  {entry.room}
+                                </p>
+                              )}
                             </div>
-                            <p className="mt-0.5 font-mono text-[9px] opacity-75">
-                              {entry.start_display}–{entry.end_display}
-                            </p>
-                            {entry.room && (
-                              <p className="mt-1 flex items-center gap-1 font-mono text-[9px] opacity-75">
-                                <MapPin size={9} />
-                                {entry.room}
-                              </p>
-                            )}
-                          </div>
-                        )}
+                          );
+                        })}
                       </div>
                     );
                   })}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
         </div>
 
