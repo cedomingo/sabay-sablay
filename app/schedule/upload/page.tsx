@@ -69,9 +69,27 @@ function UploadPageInner() {
         body: formData,
       });
 
+      // Vercel (or any proxy in front of the app) can return a plain HTML
+      // error page for things like function timeouts — parsing that as
+      // JSON throws a confusing "Unexpected token" error. Check the
+      // content type first so we can show a real message instead.
+      const isJson = res.headers
+        .get("content-type")
+        ?.includes("application/json");
+
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to parse schedule");
+        const message = isJson
+          ? (await res.json()).error
+          : "The server took too long to respond. This can happen if the " +
+            "OCR service was idle and is still starting up — please wait a " +
+            "few seconds and try again.";
+        throw new Error(message || "Failed to parse schedule");
+      }
+
+      if (!isJson) {
+        throw new Error(
+          "Received an unexpected response from the server. Please try again."
+        );
       }
 
       const parsed = await res.json();

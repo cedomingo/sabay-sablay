@@ -2,6 +2,14 @@ import { createClient } from "@/lib/supabase/server";
 import { parseScheduleImage } from "@/lib/ocr-service";
 import { NextResponse } from "next/server";
 
+// Give this route more room than Vercel's 10s default. The OCR call to
+// Render can legitimately take 15-30s+ (longer if the Render instance
+// is cold-starting). Without this, Vercel kills the function and returns
+// an HTML timeout page instead of JSON, which shows up client-side as
+// "Unexpected token 'A', "An error o"... is not valid JSON".
+// Max allowed is 60s on Hobby, 300s on Pro (requires that plan on Vercel).
+export const maxDuration = 60;
+
 // POST /api/schedule/parse
 // Accepts a multipart form with a schedule image file.
 // Uploads to Supabase Storage, calls the OCR service, returns parsed entries.
