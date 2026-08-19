@@ -221,19 +221,6 @@ def parse_schedule(image_path):
             m['_last_row_idx'] = e['row_idx']
             merged.append(m)
 
-    result_entries = []
-    for m in merged:
-        subject, number, section = split_course(m['course_raw'])
-        result_entries.append({
-            'day': m['day'],
-            'start': m['start'],
-            'end': m['end'],
-            'course': m['course_raw'],
-            'subject': subject,
-            'number': number,
-            'section': section,
-        })
-
     def time_to_minutes(t):
         m = re.match(r'(\d{1,2}):(\d{2})(AM|PM)', t.upper())
         if not m:
@@ -244,6 +231,21 @@ def parse_schedule(image_path):
         else:
             h = 12 if h == 12 else h + 12
         return h * 60 + mnt
+
+    result_entries = []
+    for m in merged:
+        subject, number, section = split_course(m['course_raw'])
+        result_entries.append({
+            'day': m['day'],
+            'start': m['start'],
+            'end': m['end'],
+            'start_minutes': time_to_minutes(m['start']),
+            'end_minutes': time_to_minutes(m['end']),
+            'course': m['course_raw'],
+            'subject': subject,
+            'number': number,
+            'section': section,
+        })
 
     day_order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     result_entries.sort(key=lambda e: (day_order.index(e['day']), time_to_minutes(e['start'])))
