@@ -16,6 +16,19 @@ import { useOptimisticAction } from "@/lib/hooks/use-optimistic-action";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+// Per-group color palette for the personal calendar. Each group gets
+// its own color so tasks are visually distinguishable at a glance.
+const GROUP_COLORS: Array<{ bg: string; text: string; border: string; barBg: string }> = [
+  { bg: "bg-[#E8F5E9]", text: "text-[#1B5E20]", border: "border-[#81C784]", barBg: "bg-[#81C784]" },
+  { bg: "bg-[#E3F2FD]", text: "text-[#0D47A1]", border: "border-[#64B5F6]", barBg: "bg-[#64B5F6]" },
+  { bg: "bg-[#FFF3E0]", text: "text-[#E65100]", border: "border-[#FFB74D]", barBg: "bg-[#FFB74D]" },
+  { bg: "bg-[#F3E5F5]", text: "text-[#4A148C]", border: "border-[#BA68C8]", barBg: "bg-[#BA68C8]" },
+  { bg: "bg-[#FCE4EC]", text: "text-[#880E4F]", border: "border-[#F06292]", barBg: "bg-[#F06292]" },
+  { bg: "bg-[#E0F7FA]", text: "text-[#006064]", border: "border-[#4DD0E1]", barBg: "bg-[#4DD0E1]" },
+  { bg: "bg-[#FFF9C4]", text: "text-[#F57F17]", border: "border-[#FFF176]", barBg: "bg-[#FFF176]" },
+];
+const PERSONAL_COLOR = { bg: "bg-[#F4A28C]", text: "text-[#512E2B]", border: "border-[#DC7C66]", barBg: "bg-[#F4A28C]" };
+
 // Layout constants shared between the day-cell spacer and the bar
 // overlay so the two stay in sync without either knowing about the
 // other's implementation.
@@ -39,6 +52,8 @@ interface RangedEvent {
   endKey: string;
   title: string;
   description: string | null;
+  groupId?: string | null;
+  groupName?: string | null;
 }
 
 interface BarSegment {
@@ -49,6 +64,8 @@ interface BarSegment {
   title?: string;
   description?: string | null;
   isPreview?: boolean;
+  groupId?: string | null;
+  groupName?: string | null;
 }
 
 function dateKey(d: Date): string {
@@ -125,6 +142,8 @@ function computeWeekSegments(
       endCol: weekKeys.indexOf(e),
       title: r.title,
       description: r.description,
+      groupId: r.groupId,
+      groupName: r.groupName,
     });
   }
 
@@ -192,6 +211,7 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
   const [tooltip, setTooltip] = useState<{
     title: string;
     description: string | null;
+    subtitle?: string;
     x: number;
     y: number;
   } | null>(null);
@@ -222,6 +242,19 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
     return map;
   }, [tasks]);
 
+  // Build a map from group_id → color for the personal calendar.
+  const groupColorMap = useMemo(() => {
+    const map = new Map<string, typeof GROUP_COLORS[0]>();
+    let idx = 0;
+    for (const t of tasks) {
+      if (t.group_id && !map.has(t.group_id)) {
+        map.set(t.group_id, GROUP_COLORS[idx % GROUP_COLORS.length]);
+        idx++;
+      }
+    }
+    return map;
+  }, [tasks]);
+
   // Multi-day tasks (has end_date) render as spanning bars via the
   // per-week overlay computed below.
   const rangedEvents = useMemo<RangedEvent[]>(() => {
@@ -233,6 +266,8 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
         endKey: t.end_date as string,
         title: t.title,
         description: t.description,
+        groupId: t.group_id,
+        groupName: (t as any).groups?.name ?? null,
       }));
   }, [tasks]);
 
@@ -474,9 +509,9 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
     setCursor(new Date(today.getFullYear(), today.getMonth(), 1));
   }
 
-  function showTooltip(e: React.MouseEvent, title: string, description: string | null) {
+  function showTooltip(e: React.MouseEvent, title: string, description: string | null, subtitle?: string) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setTooltip({ title, description, x: rect.left + rect.width / 2, y: rect.top });
+    setTooltip({ title, description, subtitle, x: rect.left + rect.width / 2, y: rect.top });
   }
 
   return (
@@ -592,21 +627,30 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                         {spacerHeight > 0 && <div style={{ height: spacerHeight }} />}
 
                         <div className="flex flex-1 flex-col gap-1 overflow-hidden">
-                          {dayTasks.slice(0, 3).map((t) => (
-                            <span
-                              key={t.id}
-                              title={t.title}
-                              onPointerDown={(e) => e.stopPropagation()}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetailFor(t);
-                              }}
-                              className="cursor-pointer truncate rounded-md bg-[#D9E7DE] px-1.5 py-0.5 text-[10px] font-semibold text-[#286057] hover:bg-[#C7DBCE]"
-                            >
-                              {t.due_time ? `${formatTime12h(t.due_time)} · ` : ""}
-                              {t.title}
-                            </span>
-                          ))}
+                          {dayTasks.slice(0, 3).map((t) => {
+                            const tColor = t.group_id
+                              ? groupColorMap.get(t.group_id) || GROUP_COLORS[0]
+                              : PERSONAL_COLOR;
+                            const tSubtitle = t.group_id
+                              ? (t as any).groups?.name || "Group"
+                              : "Personal";
+                            return (
+                              <span
+                                key={t.id}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDetailFor(t);
+                                }}
+                                onMouseEnter={(e) => showTooltip(e, t.title, t.description ?? null, tSubtitle)}
+                                onMouseLeave={() => setTooltip(null)}
+                                className={`cursor-pointer truncate rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${tColor.bg} ${tColor.text} hover:brightness-95`}
+                              >
+                                {t.due_time ? `${formatTime12h(t.due_time)} · ` : ""}
+                                {t.title}
+                              </span>
+                            );
+                          })}
                           {dayTasks.length > 3 && (
                             <span className="text-[10px] font-semibold text-[#87908A]">
                               +{dayTasks.length - 3} more
@@ -640,13 +684,23 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                         onMouseEnter={
                           seg.isPreview
                             ? undefined
-                            : (e) => showTooltip(e, seg.title || "", seg.description ?? null)
+                            : (e) => {
+                                const sub = seg.groupId
+                                  ? seg.groupName || "Group"
+                                  : "Personal";
+                                showTooltip(e, seg.title || "", seg.description ?? null, sub);
+                              }
                         }
                         onMouseLeave={seg.isPreview ? undefined : () => setTooltip(null)}
                         className={`pointer-events-auto absolute flex items-center truncate rounded-md px-1.5 text-[10px] font-semibold ${
                           seg.isPreview
                             ? "border border-dashed border-[#56B9AC] bg-[#56B9AC]/25 text-[#214746]"
-                            : "cursor-pointer bg-[#F6D486] text-[#6B4E13] shadow-sm hover:brightness-95"
+                            : (() => {
+                                const c = seg.groupId
+                                  ? groupColorMap.get(seg.groupId) || GROUP_COLORS[0]
+                                  : PERSONAL_COLOR;
+                                return `cursor-pointer ${c.barBg} ${c.text} shadow-sm hover:brightness-95`;
+                              })()
                         }`}
                         style={{
                           left: `calc(${(seg.startCol / 7) * 100}% + 3px)`,
@@ -673,6 +727,11 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
           style={{ left: tooltip.x, top: tooltip.y }}
         >
           <p className="font-display text-xs font-semibold">{tooltip.title}</p>
+          {tooltip.subtitle && (
+            <p className="mt-0.5 text-[10px] font-semibold text-[#F6D486]">
+              {tooltip.subtitle}
+            </p>
+          )}
           {tooltip.description && (
             <p className="mt-0.5 line-clamp-3 text-[11px] text-[#A9D8CA]">
               {tooltip.description}

@@ -38,6 +38,14 @@ export default async function GroupDetailPage({
 
   const isOwner = group.owner_id === user.id;
 
+  // Fetch the current user's profile name for the invite tab
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .single();
+  const userName = profile?.full_name || user.email?.split("@")[0] || "Someone";
+
   const [scheduleData, courseMates, calendarTasks] = await Promise.all([
     getGroupSchedule(groupId),
     getCourseMates(groupId),
@@ -97,6 +105,9 @@ export default async function GroupDetailPage({
 
       <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
         <GroupTabs
+          inviteCode={group.invite_code}
+          groupName={group.name}
+          userName={userName}
           scheduleTab={
             <div className="space-y-6">
               {scheduleData && scheduleData.entries.length === 0 && scheduleData.members.length === 0 ? (

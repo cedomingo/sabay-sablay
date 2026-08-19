@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Users, UserRound } from "lucide-react";
+import { Users, UserRound, Plus, CalendarRange } from "lucide-react";
 import { getMyGroups } from "@/lib/actions/group";
 import AppHeader from "@/components/AppHeader";
 import CreateGroupModal from "./CreateGroupModal";
@@ -13,6 +13,7 @@ export default async function GroupsPage() {
       <AppHeader
         maxWidth="max-w-5xl"
         navItems={[
+          { label: "My schedule", href: "/schedule", icon: <CalendarRange size={14} /> },
           { label: "Profile", href: "/profile", icon: <UserRound size={14} /> },
         ]}
         subtitle={
@@ -20,9 +21,12 @@ export default async function GroupsPage() {
             <p className="font-mono text-[10px] uppercase tracking-[.24em] text-[#A9D8CA]">
               Collaboration
             </p>
-            <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight md:text-3xl">
-              My groups
-            </h1>
+            <div className="mt-1 flex items-center gap-3">
+              <h1 className="font-display text-2xl font-semibold tracking-tight md:text-3xl">
+                My groups
+              </h1>
+              <CreateGroupModal variant="icon" />
+            </div>
           </div>
         }
         headerActions={
