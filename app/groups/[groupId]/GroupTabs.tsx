@@ -23,10 +23,9 @@ export default function GroupTabs({ scheduleTab, calendarTab, inviteCode, groupN
   async function handleCopyLink() {
     if (!inviteCode) return;
     const url = `${window.location.origin}/join/${inviteCode}`;
-    const name = userName || "Someone";
-    const group = groupName || "the group";
-    const text = `Let's track our schedules together!\n\n${url}\n\n${name} invited you to join ${group}`;
-    await navigator.clipboard.writeText(text);
+    // Bare link only — see CreatedGroupOverlay for why we don't bundle
+    // the "invited you to join" sentence into the copied text.
+    await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }

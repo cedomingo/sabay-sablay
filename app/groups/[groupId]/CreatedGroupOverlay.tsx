@@ -27,9 +27,12 @@ export default function CreatedGroupOverlay({
 
   async function handleCopyInvite() {
     const url = `${window.location.origin}/join/${inviteCode}`;
-    const name = userName || "Someone";
-    const text = `Let's track our schedules together!\n\n${url}\n\n${name} invited you to join ${groupName}`;
-    await navigator.clipboard.writeText(text);
+    // Copy the bare link only. The join page's metadata already renders
+    // "<name> has invited you to join <group>" as the link preview title
+    // wherever it's pasted (Messenger, iMessage, etc.) — bundling that
+    // same sentence into the copied text just duplicates it alongside
+    // the auto-generated preview.
+    await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
