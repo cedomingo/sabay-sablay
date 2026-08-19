@@ -64,6 +64,7 @@ export default async function GroupDetailPage({
           groupName={group.name}
           inviteCode={group.invite_code}
           groupId={groupId}
+          userName={userName}
         />
       )}
       <AppHeader

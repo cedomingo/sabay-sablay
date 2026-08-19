@@ -25,7 +25,7 @@ export default function GroupTabs({ scheduleTab, calendarTab, inviteCode, groupN
     const url = `${window.location.origin}/join/${inviteCode}`;
     const name = userName || "Someone";
     const group = groupName || "the group";
-    const text = `Let's track our schedules together!\n\n${name} has invited you to join ${group}\n\n${url}`;
+    const text = `Let's track our schedules together!\n\n${url}\n\n${name} invited you to join ${group}`;
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -96,14 +96,14 @@ export default function GroupTabs({ scheduleTab, calendarTab, inviteCode, groupN
               </div>
               <div className="mt-2 rounded-lg border border-[#D0CEC4] bg-white px-3 py-2.5">
                 <p className="text-xs text-[#87908A]">Let&apos;s track our schedules together!</p>
-                <p className="mt-1 text-sm font-semibold text-[#214746]">
-                  {userName || "Someone"} has invited you to join {groupName || "the group"}
-                </p>
                 <code className="mt-1 block font-mono text-[11px] text-[#87908A]">
                   {typeof window !== "undefined"
                     ? `${window.location.origin}/join/${inviteCode}`
                     : `/join/${inviteCode}`}
                 </code>
+                <p className="mt-1 text-sm font-semibold text-[#214746]">
+                  {userName || "Someone"} invited you to join {groupName || "the group"}
+                </p>
               </div>
               <div className="mt-3 flex justify-end">
                 <button

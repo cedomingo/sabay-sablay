@@ -7,12 +7,14 @@ interface CreatedGroupOverlayProps {
   groupName: string;
   inviteCode: string;
   groupId: string;
+  userName?: string;
 }
 
 export default function CreatedGroupOverlay({
   groupName,
   inviteCode,
   groupId,
+  userName,
 }: CreatedGroupOverlayProps) {
   const [show, setShow] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -25,7 +27,8 @@ export default function CreatedGroupOverlay({
 
   async function handleCopyInvite() {
     const url = `${window.location.origin}/join/${inviteCode}`;
-    const text = `Let's track our schedules together!\n\nSomeone has invited you to join ${groupName}\n\n${url}`;
+    const name = userName || "Someone";
+    const text = `Let's track our schedules together!\n\n${url}\n\n${name} invited you to join ${groupName}`;
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);

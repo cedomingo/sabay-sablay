@@ -1,14 +1,77 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Users } from "lucide-react";
 import { joinGroup } from "@/lib/actions/group";
 import Link from "next/link";
 import SubmitButton from "@/components/SubmitButton";
 import AppHeader from "@/components/AppHeader";
+import type { Metadata } from "next";
 
 async function handleJoin(code: string) {
   "use server";
   await joinGroup(code);
+}
+
+/**
+ * Dynamic link-preview metadata for a shared invite link. Looks up the
+ * group (and its owner's/inviter's display name) by invite code, so a
+ * crawler/unauthenticated fetch of `/join/[code]` gets a real per-invite
+ * preview ("<Inviter> has invited you to join <Group>") instead of the
+ * app-wide defaults. Falls back gracefully if the code doesn't resolve.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: { code: string };
+}): Promise<Metadata> {
+  const { code } = params;
+
+  // Link-preview crawlers hit this route unauthenticated, so the
+  // session-bound client (and the `authenticated`-only invite RPC) can't
+  // be used here. This is read-only, public-facing invite info (group
+  // name + inviter's display name) — the same trust boundary as the
+  // rendered page below — so the service-role admin client is the right
+  // tool, bypassing RLS deliberately rather than duplicating a second
+  // "public" RPC just for metadata.
+  const admin = createAdminClient();
+
+  const { data: group } = await admin
+    .from("groups")
+    .select("name, description, owner_id")
+    .eq("invite_code", code)
+    .single();
+
+  if (!group) {
+    return {
+      title: "Invite | Sabay Sablay",
+      description: "Join a group on Sabay Sablay to track schedules together.",
+    };
+  }
+
+  const { data: ownerProfile } = await admin
+    .from("profiles")
+    .select("full_name")
+    .eq("id", group.owner_id)
+    .single();
+
+  const inviterName = ownerProfile?.full_name || "Someone";
+  const title = `${inviterName} has invited you to join ${group.name}`;
+  const description = "Let's track our schedules together!";
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: "website",
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+    },
+  };
 }
 
 export default async function JoinGroupPage({

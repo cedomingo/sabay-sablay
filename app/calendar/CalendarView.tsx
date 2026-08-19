@@ -11,7 +11,7 @@ import {
   CalendarRange,
   Trash2,
 } from "lucide-react";
-import { createPersonalTask, createGroupTask, updateTask, deleteTask, type Task } from "@/lib/actions/tasks";
+import { createPersonalTask, createGroupTask, updateTask, deleteTask, toggleTaskStatus, type Task } from "@/lib/actions/tasks";
 import { useOptimisticAction } from "@/lib/hooks/use-optimistic-action";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -492,6 +492,21 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
     });
   }
 
+  async function handleToggleDetailDone() {
+    if (!detailTask) return;
+    const taskId = detailTask.id;
+    const newStatus = detailTask.status === "open" ? "done" : "open";
+    setDetailTask({ ...detailTask, status: newStatus });
+
+    await run({
+      id: taskId,
+      apply: (prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
+      action: () => toggleTaskStatus(taskId, detailTask.group_id ?? undefined),
+      errorMessage: "Couldn't update that task.",
+    });
+  }
+
   async function handleDeleteDetail() {
     if (!detailTask) return;
     const taskId = detailTask.id;
@@ -964,6 +979,22 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
             </div>
 
             <div className="mt-5 space-y-4">
+              <label className="flex items-center gap-2.5 rounded-xl border border-[#C8C6BD] bg-white px-4 py-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={detailTask.status === "done"}
+                  onChange={handleToggleDetailDone}
+                  className="h-4 w-4 rounded border-[#B9BDB4] text-[#56B9AC] focus:ring-2 focus:ring-[#56B9AC]/20"
+                />
+                <span
+                  className={`text-sm font-semibold ${
+                    detailTask.status === "done" ? "text-[#87908A] line-through" : "text-[#214746]"
+                  }`}
+                >
+                  {detailTask.status === "done" ? "Done" : "Mark as done"}
+                </span>
+              </label>
+
               <div>
                 <label className="mb-1 block font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
                   Name
@@ -1044,7 +1075,7 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                 onClick={closeDetail}
                 className="rounded-xl bg-[#214746] px-5 py-2.5 text-sm font-semibold text-[#F4F1E9] transition-all hover:-translate-y-0.5"
               >
-                Done
+                Close
               </button>
             </div>
           </div>
