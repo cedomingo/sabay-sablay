@@ -1,3 +1,17 @@
+import { Suspense } from "react";
+
+export default function ScheduleUploadPage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-2xl mx-auto p-6 flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    }>
+      <ScheduleUploadClient />
+    </Suspense>
+  );
+}
+
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
@@ -6,7 +20,7 @@ import { createBrowserClient } from "@supabase/ssr";
 import { Upload, X, Loader2 } from "lucide-react";
 import { parseScheduleImage } from "@/lib/client-ocr/parseSchedule";
 
-export default function ScheduleUploadPage() {
+function ScheduleUploadClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const groupId = searchParams.get("groupId");
