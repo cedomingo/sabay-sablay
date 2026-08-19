@@ -77,17 +77,10 @@ async def parse(
 
 def _run_parser(image_path: str) -> dict:
     """
-    Calls the existing parse_schedule.py script.
-
-    TODO (Phase 0 wiring step, do this before deploying): drop the real
-    parse_schedule.py into this directory and replace this stub with:
-
-        from parse_schedule import parse_schedule
-        return parse_schedule(image_path)
-
-    or however the existing script's entry point is actually named. This
-    stub exists so the service boots and the endpoint contract (Appendix B)
-    is exercisable end-to-end before the real script is wired in.
+    Calls parse_schedule.py's parse_schedule(image_path), which does the
+    actual checkmark-detection + OCR work and returns the Appendix B shape.
+    Falls back to a stub response only if parse_schedule.py is missing
+    (e.g. running this file standalone without it present).
     """
     try:
         from parse_schedule import parse_schedule  # type: ignore
