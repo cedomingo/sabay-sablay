@@ -9,8 +9,13 @@
 -- Files are stored as `schedule-images/{user_id}/{timestamp}-{filename}`
 -- (see app/api/schedule/parse/route.ts), so we scope access to each
 -- user's own folder using the first path segment.
+--
+-- Each create is preceded by a drop-if-exists so this migration can be
+-- re-run safely even if the policies already exist on the remote
+-- database (e.g. from an earlier partial apply).
 
 -- Users can upload files into their own folder
+drop policy if exists "Users can upload their own schedule images" on storage.objects;
 create policy "Users can upload their own schedule images"
   on storage.objects for insert
   with check (
@@ -19,6 +24,7 @@ create policy "Users can upload their own schedule images"
   );
 
 -- Users can read their own uploaded files
+drop policy if exists "Users can view their own schedule images" on storage.objects;
 create policy "Users can view their own schedule images"
   on storage.objects for select
   using (
@@ -27,6 +33,7 @@ create policy "Users can view their own schedule images"
   );
 
 -- Users can delete their own uploaded files (e.g. re-uploading a schedule)
+drop policy if exists "Users can delete their own schedule images" on storage.objects;
 create policy "Users can delete their own schedule images"
   on storage.objects for delete
   using (
