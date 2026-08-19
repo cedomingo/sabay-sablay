@@ -41,22 +41,24 @@ export async function POST(request: Request) {
       );
     }
 
-    // Upload to Supabase Storage
+    // Upload to Supabase Storage and call the OCR service in parallel —
+    // they're independent (OCR reads the file directly, not from Storage),
+    // so there's no reason to wait for the upload to finish before starting
+    // the parse. This roughly halves the wall-clock cost of this route
+    // when both legs take similar time.
     const fileName = `${user.id}/${Date.now()}-${file.name}`;
-    const { error: uploadError } = await supabase.storage
-      .from("schedule-images")
-      .upload(fileName, file);
+    const [uploadResult, parsed] = await Promise.all([
+      supabase.storage.from("schedule-images").upload(fileName, file),
+      parseScheduleImage(file),
+    ]);
 
-    if (uploadError) {
-      console.error("Storage upload error:", uploadError);
+    if (uploadResult.error) {
+      console.error("Storage upload error:", uploadResult.error);
       return NextResponse.json(
         { error: "Failed to upload image" },
         { status: 500 }
       );
     }
-
-    // Call OCR service
-    const parsed = await parseScheduleImage(file);
 
     return NextResponse.json({
       ...parsed,

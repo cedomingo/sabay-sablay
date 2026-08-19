@@ -43,7 +43,7 @@ export default async function TasksPage() {
                 My schedule
               </Link>
               <Link
-                href="/calendar"
+                href="/schedule?tab=calendar"
                 className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
               >
                 <CalendarDays size={14} />

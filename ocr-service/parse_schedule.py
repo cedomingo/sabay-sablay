@@ -29,9 +29,11 @@ Design notes (why it works this way):
 import sys
 import json
 import re
+import time
 import numpy as np
 from PIL import Image
 from scipy import ndimage
+from concurrent.futures import ThreadPoolExecutor
 import pytesseract
 
 
@@ -155,26 +157,49 @@ def split_course(text):
     return text, '', ''
 
 
+def _ocr_cell(cell_im):
+    """Run tesseract on a single pre-cropped/upscaled cell image. Isolated
+    into its own function so it can be dispatched to a thread pool -- each
+    call pays tesseract's fixed subprocess/init overhead, so the real win
+    is running many of these concurrently instead of one after another."""
+    return pytesseract.image_to_string(cell_im, config='--psm 7').strip()
+
+
 def parse_schedule(image_path):
+    timings = {}
+    t_total = time.perf_counter()
+
     # Keep the image in its original mode for OCR: flattening RGBA -> RGB
     # composites onto black and breaks recognition of the white-on-dark-brown
     # header row text. Use a separate RGB array only for color-based
     # checkmark detection, where alpha doesn't matter.
+    t = time.perf_counter()
     im = Image.open(image_path)
     arr = np.array(im.convert('RGB'))
     img_w = im.width
+    timings['load_image'] = time.perf_counter() - t
 
+    t = time.perf_counter()
     words = get_ocr_words(im)
+    timings['header_rows_ocr'] = time.perf_counter() - t
+
+    t = time.perf_counter()
     columns = find_day_columns(words, img_w)
     rows = find_time_rows(words, columns)
     total_units = find_total_units(words, img_w)
+    timings['layout_parse'] = time.perf_counter() - t
 
+    t = time.perf_counter()
     checkmarks = find_checkmarks(arr)
+    timings['checkmark_detect'] = time.perf_counter() - t
 
-    entries = []
+    # --- Cell prep: cheap, CPU-light work (column/row lookup, cropping,
+    # upscaling). Done up front and sequentially so every cell is ready
+    # before we touch tesseract at all. ---
+    t = time.perf_counter()
+    cells = []  # list of (day, row_idx, start, end, cell_im)
     for (x0, y0, x1, y1) in checkmarks:
         cx = (x0 + x1) / 2
-        cy = (y0 + y1) / 2
 
         col = None
         for c in columns[1:]:  # skip Time column
@@ -194,17 +219,34 @@ def parse_schedule(image_path):
         if crop_right <= crop_left:
             continue
         cell_im = im.crop((crop_left, crop_top, crop_right, crop_bottom))
-        cell_im = cell_im.resize((cell_im.width * 3, cell_im.height * 3), Image.LANCZOS)
-        text = pytesseract.image_to_string(cell_im, config='--psm 7').strip()
-        text = clean_course_text(text)
+        # 2x upscale (was 3x): still well above tesseract's readability
+        # threshold at this crop size, but a quarter of the pixel count
+        # feeding into each OCR call.
+        cell_im = cell_im.resize((cell_im.width * 2, cell_im.height * 2), Image.LANCZOS)
+
+        cells.append((col['name'], row_idx, row['start'], row['end'], cell_im))
+    timings['cell_prep'] = time.perf_counter() - t
+
+    # --- Cell OCR: the actual bottleneck. Each pytesseract call spawns a
+    # subprocess with fixed launch overhead, so N sequential calls pay that
+    # overhead N times over. Running them concurrently overlaps that
+    # overhead instead of paying it serially. ---
+    t = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(cells)))) as pool:
+        ocr_texts = list(pool.map(lambda c: _ocr_cell(c[4]), cells))
+    timings['cell_ocr'] = time.perf_counter() - t
+
+    t = time.perf_counter()
+    entries = []
+    for (day, row_idx, start, end, _cell_im), raw_text in zip(cells, ocr_texts):
+        text = clean_course_text(raw_text)
         if not text:
             continue
-
         entries.append({
-            'day': col['name'],
+            'day': day,
             'row_idx': row_idx,
-            'start': row['start'],
-            'end': row['end'],
+            'start': start,
+            'end': end,
             'course_raw': text,
         })
 
@@ -249,6 +291,15 @@ def parse_schedule(image_path):
 
     day_order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     result_entries.sort(key=lambda e: (day_order.index(e['day']), time_to_minutes(e['start'])))
+    timings['merge_format'] = time.perf_counter() - t
+
+    timings['total'] = time.perf_counter() - t_total
+    print(
+        "[parse_schedule] timing (s): "
+        + ", ".join(f"{k}={v:.3f}" for k, v in timings.items())
+        + f" | cells_ocr'd={len(cells)}",
+        file=sys.stderr,
+    )
 
     return {
         'total_units': total_units,

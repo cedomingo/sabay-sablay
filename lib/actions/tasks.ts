@@ -326,6 +326,7 @@ export async function createPersonalTask({
 
   revalidatePath("/tasks");
   revalidatePath("/calendar");
+  revalidatePath("/schedule");
 }
 
 /**
@@ -383,6 +384,7 @@ export async function createGroupTask({
   revalidatePath(`/groups/${groupId}`);
   // Group tasks also show up on each member's personal calendar.
   revalidatePath("/calendar");
+  revalidatePath("/schedule");
 }
 
 /** Toggle task status between 'open' and 'done'. */
@@ -420,6 +422,7 @@ export async function toggleTaskStatus(taskId: string, groupId?: string | null) 
 
   revalidatePath("/tasks");
   revalidatePath("/calendar");
+  revalidatePath("/schedule");
   if (task.group_id) {
     revalidatePath(`/groups/${task.group_id}/tasks`);
     revalidatePath(`/groups/${task.group_id}`);
@@ -482,6 +485,7 @@ export async function updateTask(
 
   revalidatePath("/tasks");
   revalidatePath("/calendar");
+  revalidatePath("/schedule");
   if (task?.group_id) {
     revalidatePath(`/groups/${task.group_id}/tasks`);
     revalidatePath(`/groups/${task.group_id}`);
@@ -617,6 +621,7 @@ export async function deleteTask(taskId: string) {
 
   revalidatePath("/tasks");
   revalidatePath("/calendar");
+  revalidatePath("/schedule");
   if (task?.group_id) {
     revalidatePath(`/groups/${task.group_id}/tasks`);
     revalidatePath(`/groups/${task.group_id}`);

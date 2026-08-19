@@ -12,6 +12,7 @@ stays identical to the script that was already validated on real
 screenshots.
 """
 
+import asyncio
 import hmac
 import os
 import tempfile
@@ -65,7 +66,12 @@ async def parse(
         tmp_path = tmp.name
 
     try:
-        result = _run_parser(tmp_path)
+        # parse_schedule() is synchronous and CPU-bound (image processing +
+        # tesseract calls, itself internally parallelized). Running it
+        # directly on this coroutine would block the event loop, stalling
+        # every other in-flight request on this worker for the whole parse.
+        # Offload it to a thread so the loop stays free.
+        result = await asyncio.to_thread(_run_parser, tmp_path)
     finally:
         try:
             os.unlink(tmp_path)

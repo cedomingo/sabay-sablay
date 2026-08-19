@@ -1,12 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { LayoutGrid, Upload, MapPin, Clock, LogOut, Users, ListChecks, Calendar, CalendarDays } from "lucide-react";
+import { LayoutGrid, Upload, MapPin, LogOut, Users, ListChecks } from "lucide-react";
 import { revalidatePath } from "next/cache";
-import { getUpcomingTasks } from "@/lib/actions/tasks";
+import { getUpcomingTasks, getAllVisibleTasks } from "@/lib/actions/tasks";
 import { checkDueDateNotifications } from "@/lib/actions/notifications";
 import NotificationBell from "@/components/NotificationBell";
 import PrivacyToggle from "@/components/PrivacyToggle";
 import SubmitButton from "@/components/SubmitButton";
+import ScheduleTabs from "./ScheduleTabs";
+import CalendarView from "../calendar/CalendarView";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
@@ -156,11 +158,18 @@ async function handleSignOut() {
   redirect("/auth/login");
 }
 
-export default async function SchedulePage() {
-  const [schedule, upcomingTasks] = await Promise.all([
+export default async function SchedulePage({
+  searchParams,
+}: {
+  searchParams?: { tab?: string };
+}) {
+  const [schedule, upcomingTasks, calendarTasks] = await Promise.all([
     getSchedule(),
     getUpcomingTasks(5),
+    getAllVisibleTasks(),
   ]);
+
+  const initialTab = searchParams?.tab === "calendar" ? "calendar" : "schedule";
 
   // Generate due-date notifications in the background (non-blocking)
   checkDueDateNotifications().catch(() => {});
@@ -179,33 +188,41 @@ export default async function SchedulePage() {
           </div>
         </div>
 
-        <div className="mx-auto max-w-3xl px-6 py-20 text-center">
-          <div className="paper-grid inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-[#F6D486] text-[#765514]">
-            <Upload size={24} />
-          </div>
-          <h1 className="mt-6 font-display text-2xl font-semibold text-[#214746]">
-            Your week is a blank page.
-          </h1>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-[#717972]">
-            Upload a timetable and we&apos;ll turn the fixed bits into a map you
-            can actually read.
-          </p>
-          <div className="mt-6 flex items-center justify-center gap-3">
-            <a
-              href="/schedule/upload"
-              className="inline-flex items-center gap-2 rounded-xl bg-[#214746] px-5 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5"
-            >
-              <Upload size={16} />
-              Upload timetable
-            </a>
-            <a
-              href="/groups"
-              className="inline-flex items-center gap-2 rounded-xl border border-[#C8C6BD] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5]"
-            >
-              <Users size={16} />
-              My groups
-            </a>
-          </div>
+        <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
+          <ScheduleTabs
+            initialTab={initialTab}
+            scheduleTab={
+              <div className="mx-auto max-w-3xl py-12 text-center">
+                <div className="paper-grid inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-[#F6D486] text-[#765514]">
+                  <Upload size={24} />
+                </div>
+                <h1 className="mt-6 font-display text-2xl font-semibold text-[#214746]">
+                  Your week is a blank page.
+                </h1>
+                <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-[#717972]">
+                  Upload a timetable and we&apos;ll turn the fixed bits into a map you
+                  can actually read.
+                </p>
+                <div className="mt-6 flex items-center justify-center gap-3">
+                  <a
+                    href="/schedule/upload"
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#214746] px-5 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5"
+                  >
+                    <Upload size={16} />
+                    Upload timetable
+                  </a>
+                  <a
+                    href="/groups"
+                    className="inline-flex items-center gap-2 rounded-xl border border-[#C8C6BD] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5]"
+                  >
+                    <Users size={16} />
+                    My groups
+                  </a>
+                </div>
+              </div>
+            }
+            calendarTab={<CalendarView initialTasks={calendarTasks} />}
+          />
         </div>
       </main>
     );
@@ -234,13 +251,6 @@ export default async function SchedulePage() {
             </div>
             <div className="flex items-center gap-2">
               <NotificationBell />
-              <a
-                href="/calendar"
-                className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
-              >
-                <CalendarDays size={14} />
-                Calendar
-              </a>
               <a
                 href="/groups"
                 className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
@@ -289,8 +299,13 @@ export default async function SchedulePage() {
         <div className="absolute -bottom-16 -right-8 h-40 w-40 rounded-full border-[16px] border-[#F6D486]/20" />
       </div>
 
-      {/* Schedule Grid */}
+      {/* Schedule / Calendar tabs */}
       <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
+        <ScheduleTabs
+          initialTab={initialTab}
+          calendarTab={<CalendarView initialTasks={calendarTasks} />}
+          scheduleTab={
+            <>
         <div className="overflow-hidden rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card">
           {/* Grid Header */}
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#D8D6CD] px-4 py-4 md:px-6">
@@ -543,6 +558,9 @@ export default async function SchedulePage() {
             </div>
           </div>
         )}
+            </>
+          }
+        />
       </div>
     </main>
   );
