@@ -4,11 +4,11 @@ import { revalidatePath } from "next/cache";
 import { LayoutGrid, ArrowLeft, Users, LogOut, Settings, BookOpen } from "lucide-react";
 import { getGroup } from "@/lib/actions/group";
 import { getGroupSchedule } from "@/lib/actions/group-schedule";
-import { getGroupTasks, getGroupCalendarTasks } from "@/lib/actions/tasks";
+import { getGroupCalendarTasks } from "@/lib/actions/tasks";
 import { getCourseMates } from "@/lib/actions/course-mates";
 import NotificationBell from "@/components/NotificationBell";
 import SubmitButton from "@/components/SubmitButton";
-import ScheduleLineChart from "./schedule/ScheduleLineChart";
+import GroupScheduleGrid from "./schedule/GroupScheduleGrid";
 import CalendarView from "@/app/calendar/CalendarView";
 import GroupTabs from "./GroupTabs";
 import Link from "next/link";
@@ -53,18 +53,6 @@ export default async function GroupDetailPage({
     getCourseMates(groupId),
     getGroupCalendarTasks(groupId).catch(() => []),
   ]);
-
-  // Only open, dated tasks are worth plotting on the forward-looking
-  // weekly timeline; tolerate failure so a tasks hiccup never breaks
-  // the schedule tab itself.
-  let weekTasks: Awaited<ReturnType<typeof getGroupTasks>> = [];
-  try {
-    weekTasks = (await getGroupTasks(groupId)).filter(
-      (t) => t.status === "open" && t.due_at
-    );
-  } catch {
-    weekTasks = [];
-  }
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
@@ -157,11 +145,9 @@ export default async function GroupDetailPage({
                   </p>
                 </div>
               ) : (
-                <ScheduleLineChart
+                <GroupScheduleGrid
                   entries={scheduleData?.entries ?? []}
                   members={scheduleData?.members ?? []}
-                  memberCount={scheduleData?.memberCount ?? 0}
-                  tasks={weekTasks}
                 />
               )}
 

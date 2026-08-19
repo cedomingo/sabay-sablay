@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { LayoutGrid, LogOut, Users, ListChecks, CalendarDays } from "lucide-react";
+import { LayoutGrid, LogOut, Users, CalendarDays } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
 import { getAllVisibleTasks } from "@/lib/actions/tasks";
 import CalendarView from "./CalendarView";
@@ -45,13 +45,6 @@ export default async function CalendarPage() {
                 className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
               >
                 My schedule
-              </Link>
-              <Link
-                href="/tasks"
-                className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
-              >
-                <ListChecks size={14} />
-                Tasks
               </Link>
               <Link
                 href="/groups"

@@ -9,8 +9,9 @@ import {
   Clock,
   MapPin,
   CalendarRange,
+  Trash2,
 } from "lucide-react";
-import { createPersonalTask, createGroupTask, type Task } from "@/lib/actions/tasks";
+import { createPersonalTask, createGroupTask, updateTask, deleteTask, type Task } from "@/lib/actions/tasks";
 import { useOptimisticAction } from "@/lib/hooks/use-optimistic-action";
 
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -173,6 +174,14 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
   const [rangeModal, setRangeModal] = useState<{ start: Date; end: Date } | null>(null);
   const [rangeName, setRangeName] = useState("");
   const [rangeDescription, setRangeDescription] = useState("");
+
+  // ---- Task detail / edit modal (Notion-style: click an existing item
+  // to open it, fields save inline, no separate "view" vs "edit" mode) ----
+  const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [detailTitle, setDetailTitle] = useState("");
+  const [detailDescription, setDetailDescription] = useState("");
+  const [detailTime, setDetailTime] = useState("");
+  const [detailRoom, setDetailRoom] = useState("");
 
   // ---- Drag-to-select state ----
   const [isDragging, setIsDragging] = useState(false);
@@ -413,6 +422,54 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
     });
   }
 
+  // ---- Task detail / edit modal ----
+  function openDetailFor(task: Task) {
+    setDetailTask(task);
+    setDetailTitle(task.title);
+    setDetailDescription(task.description || "");
+    setDetailTime(task.due_time || "");
+    setDetailRoom(task.room || "");
+  }
+
+  function closeDetail() {
+    setDetailTask(null);
+  }
+
+  // Saves whichever field changed, straight from its onBlur — no
+  // separate "Save" step, same as editing a Notion page.
+  async function saveDetailField(patch: Partial<Task>) {
+    if (!detailTask) return;
+    const taskId = detailTask.id;
+    const updated = { ...detailTask, ...patch };
+    setDetailTask(updated);
+
+    await run({
+      id: taskId,
+      apply: (prev) => prev.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
+      action: () =>
+        updateTask(taskId, {
+          title: patch.title,
+          description: patch.description,
+          room: patch.room,
+          dueTime: patch.due_time,
+        }),
+      errorMessage: "Couldn't save your changes.",
+    });
+  }
+
+  async function handleDeleteDetail() {
+    if (!detailTask) return;
+    const taskId = detailTask.id;
+    closeDetail();
+
+    await run({
+      id: taskId,
+      apply: (prev) => prev.filter((t) => t.id !== taskId),
+      action: () => deleteTask(taskId),
+      errorMessage: "Couldn't delete that task.",
+    });
+  }
+
   function goToday() {
     setCursor(new Date(today.getFullYear(), today.getMonth(), 1));
   }
@@ -539,7 +596,12 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                             <span
                               key={t.id}
                               title={t.title}
-                              className="truncate rounded-md bg-[#D9E7DE] px-1.5 py-0.5 text-[10px] font-semibold text-[#286057]"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openDetailFor(t);
+                              }}
+                              className="cursor-pointer truncate rounded-md bg-[#D9E7DE] px-1.5 py-0.5 text-[10px] font-semibold text-[#286057] hover:bg-[#C7DBCE]"
                             >
                               {t.due_time ? `${formatTime12h(t.due_time)} · ` : ""}
                               {t.title}
@@ -565,6 +627,16 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                     {segments.map((seg) => (
                       <div
                         key={seg.id}
+                        onPointerDown={seg.isPreview ? undefined : (e) => e.stopPropagation()}
+                        onClick={
+                          seg.isPreview
+                            ? undefined
+                            : (e) => {
+                                e.stopPropagation();
+                                const task = tasks.find((t) => t.id === seg.id);
+                                if (task) openDetailFor(task);
+                              }
+                        }
                         onMouseEnter={
                           seg.isPreview
                             ? undefined
@@ -574,7 +646,7 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                         className={`pointer-events-auto absolute flex items-center truncate rounded-md px-1.5 text-[10px] font-semibold ${
                           seg.isPreview
                             ? "border border-dashed border-[#56B9AC] bg-[#56B9AC]/25 text-[#214746]"
-                            : "cursor-default bg-[#F6D486] text-[#6B4E13] shadow-sm hover:brightness-95"
+                            : "cursor-pointer bg-[#F6D486] text-[#6B4E13] shadow-sm hover:brightness-95"
                         }`}
                         style={{
                           left: `calc(${(seg.startCol / 7) * 100}% + 3px)`,
@@ -790,6 +862,130 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
               >
                 <Check size={14} />
                 Save event
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task detail / edit modal — click any placed task to open it.
+          Fields save inline on blur, Notion-style, no separate edit mode. */}
+      {detailTask && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          onClick={closeDetail}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] p-6 shadow-card"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                  {detailTask.end_date ? <CalendarRange size={12} /> : <Clock size={12} />}
+                  {detailTask.end_date
+                    ? `${formatDateShort(new Date(detailTask.due_at as string))} \u2013 ${formatDateShort(
+                        keyToDate(detailTask.end_date)
+                      )}`
+                    : detailTask.due_at
+                    ? new Date(detailTask.due_at).toLocaleDateString("en-US", {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                      })
+                    : "Task details"}
+                </p>
+              </div>
+              <button
+                onClick={closeDetail}
+                className="grid h-8 w-8 place-items-center rounded-lg text-[#87908A] hover:bg-[#E7EBE5]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div>
+                <label className="mb-1 block font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={detailTitle}
+                  onChange={(e) => setDetailTitle(e.target.value)}
+                  onBlur={() => {
+                    const title = detailTitle.trim();
+                    if (title && title !== detailTask.title) {
+                      saveDetailField({ title });
+                    } else {
+                      setDetailTitle(detailTask.title);
+                    }
+                  }}
+                  autoFocus
+                  className="w-full rounded-xl border border-[#C8C6BD] bg-white px-4 py-2.5 text-sm text-[#214746] placeholder:text-[#B9BDB4] focus:border-[#56B9AC] focus:outline-none focus:ring-2 focus:ring-[#56B9AC]/20"
+                />
+              </div>
+
+              {!detailTask.end_date && (
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <label className="mb-1 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                      <Clock size={11} />
+                      Time
+                    </label>
+                    <input
+                      type="time"
+                      value={detailTime}
+                      onChange={(e) => setDetailTime(e.target.value)}
+                      onBlur={() => saveDetailField({ due_time: detailTime || null })}
+                      className="w-full rounded-xl border border-[#C8C6BD] bg-white px-4 py-2.5 text-sm text-[#214746] focus:border-[#56B9AC] focus:outline-none focus:ring-2 focus:ring-[#56B9AC]/20"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="mb-1 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                      <MapPin size={11} />
+                      Room
+                    </label>
+                    <input
+                      type="text"
+                      value={detailRoom}
+                      onChange={(e) => setDetailRoom(e.target.value)}
+                      onBlur={() => saveDetailField({ room: detailRoom || null })}
+                      placeholder="e.g. Rm 214"
+                      className="w-full rounded-xl border border-[#C8C6BD] bg-white px-4 py-2.5 text-sm text-[#214746] placeholder:text-[#B9BDB4] focus:border-[#56B9AC] focus:outline-none focus:ring-2 focus:ring-[#56B9AC]/20"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1 block font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                  Description / details
+                </label>
+                <textarea
+                  value={detailDescription}
+                  onChange={(e) => setDetailDescription(e.target.value)}
+                  onBlur={() => saveDetailField({ description: detailDescription.trim() || null })}
+                  placeholder="Any extra details (optional)"
+                  rows={5}
+                  className="w-full resize-none rounded-xl border border-[#C8C6BD] bg-white px-4 py-2.5 text-sm text-[#214746] placeholder:text-[#B9BDB4] focus:border-[#56B9AC] focus:outline-none focus:ring-2 focus:ring-[#56B9AC]/20"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <button
+                onClick={handleDeleteDetail}
+                className="inline-flex items-center gap-2 rounded-xl border border-[#E3B7AC] px-4 py-2.5 text-sm font-semibold text-[#A14D3F] hover:bg-[#F6E4DF]"
+              >
+                <Trash2 size={14} />
+                Delete
+              </button>
+              <button
+                onClick={closeDetail}
+                className="rounded-xl bg-[#214746] px-5 py-2.5 text-sm font-semibold text-[#F4F1E9] transition-all hover:-translate-y-0.5"
+              >
+                Done
               </button>
             </div>
           </div>

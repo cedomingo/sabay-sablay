@@ -87,11 +87,24 @@ export async function getGroupSchedule(
 
   const memberUserIds = members.map((m) => m.user_id);
 
-  // Fetch schedules for all group members
-  const { data: schedules } = await supabase
+  // Fetch schedules for all group members. A member may have re-uploaded
+  // their timetable, leaving more than one `schedules` row for the same
+  // user_id — order newest-first and keep only each user's latest below,
+  // same as the Personal Schedule page does, so old/duplicate uploads
+  // don't double up entries in the group view.
+  const { data: allSchedules } = await supabase
     .from("schedules")
-    .select("id, user_id")
-    .in("user_id", memberUserIds);
+    .select("id, user_id, created_at")
+    .in("user_id", memberUserIds)
+    .order("created_at", { ascending: false });
+
+  const latestScheduleByUser = new Map<string, { id: string; user_id: string }>();
+  for (const s of allSchedules || []) {
+    if (!latestScheduleByUser.has(s.user_id)) {
+      latestScheduleByUser.set(s.user_id, s);
+    }
+  }
+  const schedules = Array.from(latestScheduleByUser.values());
 
   if (!schedules || schedules.length === 0) {
     return {

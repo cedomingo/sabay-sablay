@@ -419,8 +419,10 @@ export async function toggleTaskStatus(taskId: string, groupId?: string | null) 
   }
 
   revalidatePath("/tasks");
+  revalidatePath("/calendar");
   if (task.group_id) {
     revalidatePath(`/groups/${task.group_id}/tasks`);
+    revalidatePath(`/groups/${task.group_id}`);
   }
 }
 
@@ -432,11 +434,17 @@ export async function updateTask(
     description,
     dueAt,
     assigneeId,
+    room,
+    dueTime,
+    endDate,
   }: {
     title?: string;
     description?: string | null;
     dueAt?: string | null;
     assigneeId?: string | null;
+    room?: string | null;
+    dueTime?: string | null;
+    endDate?: string | null;
   }
 ) {
   const supabase = createClient();
@@ -452,6 +460,9 @@ export async function updateTask(
   if (description !== undefined) updates.description = description;
   if (dueAt !== undefined) updates.due_at = dueAt;
   if (assigneeId !== undefined) updates.assignee_id = assigneeId;
+  if (room !== undefined) updates.room = room;
+  if (dueTime !== undefined) updates.due_time = dueTime;
+  if (endDate !== undefined) updates.end_date = endDate;
 
   const { data: task } = await supabase
     .from("tasks")
@@ -470,8 +481,10 @@ export async function updateTask(
   }
 
   revalidatePath("/tasks");
+  revalidatePath("/calendar");
   if (task?.group_id) {
     revalidatePath(`/groups/${task.group_id}/tasks`);
+    revalidatePath(`/groups/${task.group_id}`);
   }
 }
 
@@ -603,7 +616,9 @@ export async function deleteTask(taskId: string) {
   }
 
   revalidatePath("/tasks");
+  revalidatePath("/calendar");
   if (task?.group_id) {
     revalidatePath(`/groups/${task.group_id}/tasks`);
+    revalidatePath(`/groups/${task.group_id}`);
   }
 }
