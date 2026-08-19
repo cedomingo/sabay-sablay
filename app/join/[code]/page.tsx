@@ -1,18 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
-import { LayoutGrid, Users, ArrowLeft, LogOut } from "lucide-react";
+import { Users } from "lucide-react";
 import { joinGroup } from "@/lib/actions/group";
 import Link from "next/link";
 import SubmitButton from "@/components/SubmitButton";
-
-async function handleSignOut() {
-  "use server";
-  const supabase = createClient();
-  await supabase.auth.signOut();
-  revalidatePath("/", "layout");
-  redirect("/auth/login");
-}
+import AppHeader from "@/components/AppHeader";
 
 async function handleJoin(code: string) {
   "use server";
@@ -47,18 +39,8 @@ export default async function JoinGroupPage({
   if (error || !group) {
     return (
       <main className="min-h-[100dvh] bg-[#F4F1E9]">
-        <div className="grain relative overflow-hidden bg-[#214746] px-6 py-6 text-[#F4F1E9] md:px-10">
-          <div className="mx-auto max-w-3xl relative z-10">
-            <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#F4A28C] text-[#214746]">
-                <LayoutGrid size={18} />
-              </div>
-              <span className="font-display text-sm font-bold tracking-tight">
-                Sabay Sablay
-              </span>
-            </div>
-          </div>
-        </div>
+        <AppHeader maxWidth="max-w-3xl" showNotificationBell={false} />
+
         <div className="mx-auto max-w-3xl px-6 py-20 text-center">
           <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#FCE9E3] text-[#A14D3F]">
             <Users size={24} />
@@ -99,30 +81,7 @@ export default async function JoinGroupPage({
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
-      {/* Header */}
-      <div className="grain relative overflow-hidden bg-[#214746] px-6 py-6 text-[#F4F1E9] md:px-10">
-        <div className="mx-auto max-w-3xl relative z-10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#F4A28C] text-[#214746]">
-                <LayoutGrid size={18} />
-              </div>
-              <span className="font-display text-sm font-bold tracking-tight">
-                Sabay Sablay
-              </span>
-            </div>
-            <form action={handleSignOut}>
-              <SubmitButton
-                icon={<LogOut size={14} />}
-                pendingChildren="Signing out..."
-                className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855] disabled:opacity-60"
-              >
-                Sign out
-              </SubmitButton>
-            </form>
-          </div>
-        </div>
-      </div>
+      <AppHeader maxWidth="max-w-3xl" showNotificationBell={false} />
 
       {/* Join Card */}
       <div className="mx-auto max-w-3xl px-6 py-16 md:px-10">

@@ -37,13 +37,19 @@ export interface GroupWithMembers extends Group {
 // Create Group
 // ============================================================
 
+export interface CreateGroupResult {
+  groupId: string;
+  groupName: string;
+  inviteCode: string;
+}
+
 export async function createGroup({
   name,
   description,
 }: {
   name: string;
   description?: string;
-}) {
+}): Promise<CreateGroupResult> {
   const supabase = createClient();
 
   const {
@@ -60,7 +66,7 @@ export async function createGroup({
       description: description || null,
       owner_id: user.id,
     })
-    .select("id, invite_code")
+    .select("id, name, invite_code")
     .single();
 
   if (groupError || !group) {
@@ -81,7 +87,12 @@ export async function createGroup({
   }
 
   revalidatePath("/groups");
-  redirect(`/groups/${group.id}`);
+
+  return {
+    groupId: group.id,
+    groupName: group.name,
+    inviteCode: group.invite_code,
+  };
 }
 
 // ============================================================

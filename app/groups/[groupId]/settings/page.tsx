@@ -1,20 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
-import { revalidatePath } from "next/cache";
-import {
-  LayoutGrid,
-  ArrowLeft,
-  Users,
-  LogOut,
-  Trash2,
-  Settings,
-} from "lucide-react";
+import { Users, ArrowLeft, Trash2, Settings } from "lucide-react";
 import { getGroup, leaveGroup, deleteGroup } from "@/lib/actions/group";
-import NotificationBell from "@/components/NotificationBell";
 import GroupMembersList from "@/components/GroupMembersList";
 import SubmitButton from "@/components/SubmitButton";
 import InviteButton from "@/components/InviteButton";
 import Link from "next/link";
+import AppHeader from "@/components/AppHeader";
 
 /**
  * Compute presence for each group member based on their schedule.
@@ -69,14 +61,6 @@ async function getMemberPresence(memberIds: string[]) {
   return presenceMap;
 }
 
-async function handleSignOut() {
-  "use server";
-  const supabase = createClient();
-  await supabase.auth.signOut();
-  revalidatePath("/", "layout");
-  redirect("/auth/login");
-}
-
 export default async function GroupSettingsPage({
   params,
 }: {
@@ -112,62 +96,37 @@ export default async function GroupSettingsPage({
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
-      {/* Header */}
-      <div className="grain relative overflow-hidden bg-[#214746] px-6 py-6 text-[#F4F1E9] md:px-10">
-        <div className="mx-auto max-w-4xl relative z-10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#F4A28C] text-[#214746]">
-                <LayoutGrid size={18} />
-              </div>
-              <span className="font-display text-sm font-bold tracking-tight">
-                Sabay Sablay
+      <AppHeader
+        maxWidth="max-w-4xl"
+        subtitle={
+          <Link
+            href={`/groups/${groupId}`}
+            className="inline-flex items-center gap-2 text-xs font-semibold text-[#A9D8CA] hover:text-[#F4F1E9]"
+          >
+            <ArrowLeft size={14} />
+            Back to {group.name}
+          </Link>
+        }
+        title={
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[.24em] text-[#A9D8CA]">
+                {group.name}
+              </p>
+              <h1 className="mt-1 flex items-center gap-2 font-display text-2xl font-semibold tracking-tight md:text-3xl">
+                <Settings size={22} />
+                Group settings
+              </h1>
+            </div>
+            {isOwner && (
+              <span className="rounded-full bg-[#F6D486] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#4C3911]">
+                Owner
               </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <NotificationBell />
-              <form action={handleSignOut}>
-                <SubmitButton
-                  icon={<LogOut size={14} />}
-                  pendingChildren="Signing out..."
-                  className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855] disabled:opacity-60"
-                >
-                  Sign out
-                </SubmitButton>
-              </form>
-            </div>
+            )}
           </div>
+        }
+      />
 
-          <div className="mt-6">
-            <Link
-              href={`/groups/${groupId}`}
-              className="inline-flex items-center gap-2 text-xs font-semibold text-[#A9D8CA] hover:text-[#F4F1E9]"
-            >
-              <ArrowLeft size={14} />
-              Back to {group.name}
-            </Link>
-            <div className="mt-3 flex items-end justify-between">
-              <div>
-                <p className="font-mono text-[10px] uppercase tracking-[.24em] text-[#A9D8CA]">
-                  {group.name}
-                </p>
-                <h1 className="mt-1 flex items-center gap-2 font-display text-2xl font-semibold tracking-tight md:text-3xl">
-                  <Settings size={22} />
-                  Group settings
-                </h1>
-              </div>
-              {isOwner && (
-                <span className="rounded-full bg-[#F6D486] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#4C3911]">
-                  Owner
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="absolute -bottom-16 -right-8 h-40 w-40 rounded-full border-[16px] border-[#F6D486]/20" />
-      </div>
-
-      {/* Content */}
       <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           {/* Members */}
@@ -233,7 +192,7 @@ export default async function GroupSettingsPage({
                     }}
                   >
                     <SubmitButton
-                      icon={<LogOut size={14} />}
+                      icon={<ArrowLeft size={14} />}
                       pendingChildren="Leaving..."
                       className="flex w-full items-center gap-2 rounded-xl border border-[#C77A68]/30 px-4 py-2.5 text-xs font-semibold text-[#A14D3F] hover:bg-[#FCE9E3] disabled:opacity-60"
                     >

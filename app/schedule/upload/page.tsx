@@ -2,7 +2,8 @@
 
 import { Suspense, useCallback, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Upload, LayoutGrid, X, Check } from "lucide-react";
+import { Upload, Check } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
 
 export default function UploadPage() {
   return (
@@ -96,27 +97,22 @@ function UploadPageInner() {
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
-      {/* Header */}
-      <div className="grain relative overflow-hidden bg-[#214746] px-6 py-8 text-[#F4F1E9] md:px-10 md:py-10">
-        <div className="mx-auto max-w-3xl relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#F4A28C] text-[#214746]">
-              <LayoutGrid size={18} />
-            </div>
-            <span className="font-display text-sm font-bold tracking-tight">
-              Sabay Sablay
-            </span>
-          </div>
-          <h1 className="mt-6 font-display text-3xl font-semibold tracking-tight md:text-4xl">
-            Upload your timetable
-          </h1>
-          <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#D3E5DC]">
-            Take a screenshot of your class schedule from the registration
-            portal and we&apos;ll turn it into a map you can actually read.
-          </p>
-        </div>
-        <div className="absolute -bottom-16 -right-8 h-40 w-40 rounded-full border-[16px] border-[#F6D486]/20" />
-      </div>
+      <AppHeader
+        maxWidth="max-w-3xl"
+        showNotificationBell={false}
+        showSignOut={false}
+        title={
+          <>
+            <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">
+              Upload your timetable
+            </h1>
+            <p className="mt-3 max-w-lg text-sm leading-relaxed text-[#D3E5DC]">
+              Take a screenshot of your class schedule from the registration
+              portal and we&apos;ll turn it into a map you can actually read.
+            </p>
+          </>
+        }
+      />
 
       {/* Upload Area */}
       <div className="mx-auto max-w-3xl px-6 py-10 md:px-10">
@@ -176,7 +172,7 @@ function UploadPageInner() {
                 }}
                 className="grid h-8 w-8 place-items-center rounded-lg text-[#87908A] hover:bg-[#E7EBE5]"
               >
-                <X size={16} />
+                ×
               </button>
             </div>
 

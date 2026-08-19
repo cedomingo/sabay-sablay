@@ -1,22 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X, Check, Users } from "lucide-react";
+import { Plus, X, Check, Users, Copy, ExternalLink, Link2 } from "lucide-react";
 import { createGroup } from "@/lib/actions/group";
 
 interface CreateGroupModalProps {
   /** "button" renders the compact header pill; "empty-state" renders the larger CTA used on the empty /groups screen. */
   variant?: "button" | "empty-state";
-}
-
-function isRedirectError(err: unknown): boolean {
-  return (
-    !!err &&
-    typeof err === "object" &&
-    "digest" in err &&
-    typeof (err as { digest?: unknown }).digest === "string" &&
-    (err as { digest: string }).digest.startsWith("NEXT_REDIRECT")
-  );
 }
 
 export default function CreateGroupModal({ variant = "button" }: CreateGroupModalProps) {
@@ -25,11 +15,22 @@ export default function CreateGroupModal({ variant = "button" }: CreateGroupModa
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Success state
+  const [success, setSuccess] = useState<{ groupId: string; groupName: string; inviteCode: string } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   function reset() {
     setName("");
     setDescription("");
     setError(null);
+    setSuccess(null);
+    setCopied(false);
+  }
+
+  function handleClose() {
+    if (loading) return;
+    setOpen(false);
+    reset();
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -44,17 +45,29 @@ export default function CreateGroupModal({ variant = "button" }: CreateGroupModa
     setError(null);
 
     try {
-      await createGroup({
+      const result = await createGroup({
         name: name.trim(),
         description: description.trim() || undefined,
       });
-      // createGroup redirects on success (thrown NEXT_REDIRECT, rethrown
-      // below) — nothing else to do if we somehow get here.
+      setSuccess(result);
     } catch (err) {
-      if (isRedirectError(err)) throw err;
       setError(err instanceof Error ? err.message : "Failed to create group");
+    } finally {
       setLoading(false);
     }
+  }
+
+  async function handleCopyLink() {
+    if (!success) return;
+    const url = `${window.location.origin}/join/${success.inviteCode}`;
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleGoToGroup() {
+    if (!success) return;
+    window.location.href = `/groups/${success.groupId}`;
   }
 
   return (
@@ -75,117 +88,171 @@ export default function CreateGroupModal({ variant = "button" }: CreateGroupModa
       {open && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 p-4"
-          onClick={() => {
-            if (loading) return;
-            setOpen(false);
-            reset();
-          }}
+          onClick={handleClose}
         >
           <div
             className="w-full max-w-lg rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-6 shadow-elevated md:p-8"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#C9B9E9] text-[#34264F]">
-                  <Users size={20} />
+            {/* Success View */}
+            {success ? (
+              <div className="text-center">
+                <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#8DDDD0] text-[#163D3A]">
+                  <Check size={28} />
                 </div>
-                <div>
-                  <h2 className="font-display text-lg font-semibold text-[#214746]">
-                    Create a group
-                  </h2>
-                  <p className="mt-1 text-sm text-[#717972]">
-                    Give your group a name so members know which schedule
-                    view they&apos;re looking at.
-                  </p>
+                <h2 className="mt-4 font-display text-2xl font-semibold text-[#214746]">
+                  Group Created!
+                </h2>
+                <p className="mt-2 text-sm text-[#717972]">
+                  Share this invite link with your classmates to have them join{" "}
+                  <span className="font-semibold text-[#214746]">{success.groupName}</span>
+                </p>
+
+                {/* Invite Link */}
+                <div className="mt-6 rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] p-4">
+                  <div className="flex items-center gap-2 text-xs text-[#87908A]">
+                    <Link2 size={12} />
+                    <span>Invite link</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <code className="flex-1 truncate rounded-lg border border-[#D0CEC4] bg-white px-3 py-2.5 font-mono text-sm font-bold text-[#214746]">
+                      /join/{success.inviteCode}
+                    </code>
+                    <button
+                      onClick={handleCopyLink}
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#214746] px-4 py-2.5 text-sm font-semibold text-[#F4F1E9] transition-colors hover:bg-[#2B5855]"
+                    >
+                      {copied ? (
+                        <>
+                          <Check size={14} />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={14} />
+                          Copy
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="mt-6 flex items-center justify-center gap-3">
+                  <button
+                    onClick={handleGoToGroup}
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#F4A28C] px-6 py-3 text-sm font-semibold text-[#512E2B] transition-transform hover:-translate-y-0.5"
+                  >
+                    <ExternalLink size={14} />
+                    Go to group
+                  </button>
+                  <button
+                    onClick={handleClose}
+                    className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5]"
+                  >
+                    Close
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (loading) return;
-                  setOpen(false);
-                  reset();
-                }}
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#87908A] hover:bg-[#E7EBE5]"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="mt-6">
-              <div className="space-y-5">
-                <div>
-                  <label
-                    htmlFor="modal-group-name"
-                    className="mb-1.5 block text-xs font-semibold text-[#52605C]"
+            ) : (
+              <>
+                {/* Create Form */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#C9B9E9] text-[#34264F]">
+                      <Users size={20} />
+                    </div>
+                    <div>
+                      <h2 className="font-display text-lg font-semibold text-[#214746]">
+                        Create a group
+                      </h2>
+                      <p className="mt-1 text-sm text-[#717972]">
+                        Give your group a name so members know which schedule
+                        view they&apos;re looking at.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#87908A] hover:bg-[#E7EBE5]"
                   >
-                    Group name <span className="text-[#F4A28C]">*</span>
-                  </label>
-                  <input
-                    id="modal-group-name"
-                    autoFocus
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="e.g. BS CS 2-A Block"
-                    className="w-full rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] px-4 py-3 text-sm outline-none placeholder:text-[#9AA19B] focus:border-[#56B9AC]"
-                    maxLength={100}
-                    required
-                  />
+                    <X size={16} />
+                  </button>
                 </div>
 
-                <div>
-                  <label
-                    htmlFor="modal-group-description"
-                    className="mb-1.5 block text-xs font-semibold text-[#52605C]"
-                  >
-                    Description <span className="text-[#87908A]">(optional)</span>
-                  </label>
-                  <textarea
-                    id="modal-group-description"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="What's this group for?"
-                    rows={3}
-                    className="w-full rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] px-4 py-3 text-sm outline-none placeholder:text-[#9AA19B] focus:border-[#56B9AC] resize-none"
-                    maxLength={300}
-                  />
-                </div>
-              </div>
+                <form onSubmit={handleSubmit} className="mt-6">
+                  <div className="space-y-5">
+                    <div>
+                      <label
+                        htmlFor="modal-group-name"
+                        className="mb-1.5 block text-xs font-semibold text-[#52605C]"
+                      >
+                        Group name <span className="text-[#F4A28C]">*</span>
+                      </label>
+                      <input
+                        id="modal-group-name"
+                        autoFocus
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="e.g. BS CS 2-A Block"
+                        className="w-full rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] px-4 py-3 text-sm outline-none placeholder:text-[#9AA19B] focus:border-[#56B9AC]"
+                        maxLength={100}
+                        required
+                      />
+                    </div>
 
-              {error && (
-                <div className="mt-4 rounded-xl border border-[#C77A68] bg-[#FCE9E3] px-4 py-3 text-xs text-[#A14D3F]">
-                  {error}
-                </div>
-              )}
+                    <div>
+                      <label
+                        htmlFor="modal-group-description"
+                        className="mb-1.5 block text-xs font-semibold text-[#52605C]"
+                      >
+                        Description <span className="text-[#87908A]">(optional)</span>
+                      </label>
+                      <textarea
+                        id="modal-group-description"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="What's this group for?"
+                        rows={3}
+                        className="w-full rounded-xl border border-[#C8C6BD] bg-[#F4F1E9] px-4 py-3 text-sm outline-none placeholder:text-[#9AA19B] focus:border-[#56B9AC] resize-none"
+                        maxLength={300}
+                      />
+                    </div>
+                  </div>
 
-              <div className="mt-6 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => {
-                    setOpen(false);
-                    reset();
-                  }}
-                  className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] disabled:opacity-60"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading || !name.trim()}
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#214746] px-6 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5 disabled:opacity-60"
-                >
-                  {loading ? (
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#F4F1E9] border-t-transparent" />
-                  ) : (
-                    <Check size={16} />
+                  {error && (
+                    <div className="mt-4 rounded-xl border border-[#C77A68] bg-[#FCE9E3] px-4 py-3 text-xs text-[#A14D3F]">
+                      {error}
+                    </div>
                   )}
-                  Create group
-                </button>
-              </div>
-            </form>
+
+                  <div className="mt-6 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={handleClose}
+                      className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading || !name.trim()}
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#214746] px-6 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5 disabled:opacity-60"
+                    >
+                      {loading ? (
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#F4F1E9] border-t-transparent" />
+                      ) : (
+                        <Check size={16} />
+                      )}
+                      Create group
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
           </div>
         </div>
       )}

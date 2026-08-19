@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, Check, Trash2, Plus, AlertCircle } from "lucide-react";
+import { Check, Trash2, Plus, AlertCircle } from "lucide-react";
 import { saveSchedule } from "@/lib/actions/schedule";
+import AppHeader from "@/components/AppHeader";
 
 interface ParsedEntry {
   day: string;
@@ -198,32 +199,26 @@ export default function CorrectionPage() {
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
-      {/* Header */}
-      <div className="grain relative overflow-hidden bg-[#214746] px-6 py-6 text-[#F4F1E9] md:px-10">
-        <div className="mx-auto max-w-5xl relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#F4A28C] text-[#214746]">
-              <LayoutGrid size={18} />
-            </div>
-            <span className="font-display text-sm font-bold tracking-tight">
-              Sabay Sablay
-            </span>
-          </div>
-          <div className="mt-4 flex items-end justify-between">
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[.24em] text-[#A9D8CA]">
-                Review &amp; correct
-              </p>
-              <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight md:text-3xl">
-                Check your parsed entries
-              </h1>
-            </div>
-            <p className="text-xs text-[#A9D8CA]">
-              {entries.length} entries · {matchedCount} matched to CRS
+      <AppHeader
+        maxWidth="max-w-5xl"
+        showNotificationBell={false}
+        showSignOut={false}
+        subtitle={
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[.24em] text-[#A9D8CA]">
+              Review &amp; correct
             </p>
+            <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight md:text-3xl">
+              Check your parsed entries
+            </h1>
           </div>
-        </div>
-      </div>
+        }
+        headerActions={
+          <p className="text-xs text-[#A9D8CA]">
+            {entries.length} entries · {matchedCount} matched to CRS
+          </p>
+        }
+      />
 
       {/* Content */}
       <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
