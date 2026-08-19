@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { LayoutGrid, Plus, Users, LogOut, ListChecks } from "lucide-react";
+import { LayoutGrid, Plus, Users, LogOut } from "lucide-react";
 import { getMyGroups } from "@/lib/actions/group";
 import NotificationBell from "@/components/NotificationBell";
 import SubmitButton from "@/components/SubmitButton";
@@ -61,13 +61,6 @@ export default async function GroupsPage() {
                 className="rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
               >
                 My schedule
-              </Link>
-              <Link
-                href="/tasks"
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
-              >
-                <ListChecks size={13} />
-                Tasks
               </Link>
               <Link
                 href="/groups/create"
