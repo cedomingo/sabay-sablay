@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Trash2, Plus, AlertCircle } from "lucide-react";
 import { saveSchedule } from "@/lib/actions/schedule";
+import { parseCrsSchedule } from "@/lib/crs-monitor/matcher";
 import AppHeader from "@/components/AppHeader";
 
 interface ParsedEntry {
@@ -33,14 +34,19 @@ export default function CorrectionPage() {
   const [entries, setEntries] = useState<EnrichedEntry[]>([]);
   const [imagePath, setImagePath] = useState("");
   const [totalUnits, setTotalUnits] = useState<number | null>(null);
-  // Set when the upload came from a group invite flow — after saving,
-  // we send the user to that group's weekly schedule instead of /schedule.
   const [groupId, setGroupId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [enriching, setEnriching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  
+  // Phase C: Enrichment state
+  const [enrichmentResults, setEnrichmentResults] = useState<{
+    matched: any[];
+    candidates: any[];
+    unmatched: any[];
+  } | null>(null);
+  const [isEnriching, setIsEnriching] = useState(false);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("parsedSchedule");
@@ -52,7 +58,6 @@ export default function CorrectionPage() {
     try {
       const data = JSON.parse(raw);
       const parsed: ParsedEntry[] = data.schedule || [];
-      // Initialize enrichment fields
       const withEnrichment: EnrichedEntry[] = parsed.map((e) => ({
         ...e,
         crs_class_code: null,
@@ -72,6 +77,17 @@ export default function CorrectionPage() {
       setLoading(false);
     }
   }, [router]);
+
+  function timeToMinutes(timeStr: string): number {
+    if (!timeStr || timeStr === "TBA") return 0;
+    const clean = timeStr.replace(":", "");
+    if (clean.length === 4 && /^\d{4}$/.test(clean)) {
+      const hours = parseInt(clean.substring(0, 2), 10);
+      const mins = parseInt(clean.substring(2, 4), 10);
+      return hours * 60 + mins;
+    }
+    return 0;
+  }
 
   function updateEntry(idx: number, field: keyof EnrichedEntry, value: string | number | boolean) {
     setEntries((prev) =>
@@ -107,8 +123,9 @@ export default function CorrectionPage() {
     setEditingIdx(entries.length);
   }
 
+  // Phase C: New Enrich Handler (Overwrites local state wholesale on match)
   async function handleEnrich() {
-    setEnriching(true);
+    setIsEnriching(true);
     setError(null);
 
     try {
@@ -120,29 +137,121 @@ export default function CorrectionPage() {
             subject: e.subject,
             number: e.number,
             section: e.section,
+            course_raw: e.course,
+            rawText: `${e.day} ${e.start}-${e.end}`,
           })),
         }),
       });
 
       if (!res.ok) {
-        throw new Error("Enrichment failed");
+        throw new Error("Enrichment request failed");
       }
 
-      const { enriched } = await res.json();
+      const data = await res.json();
+      setEnrichmentResults(data);
 
-      // Merge enrichment data back into entries
-      setEntries((prev) =>
-        prev.map((e, i) => ({
-          ...e,
-          ...enriched[i],
-        }))
-      );
-    } catch {
-      // Non-blocking: enrichment failure doesn't prevent saving
-      console.warn("Enrichment failed, continuing without it");
+      // Auto-apply confident matches to the local state
+      if (data.matched && data.matched.length > 0) {
+        setEntries((prev) => {
+          const newEntries = [...prev];
+          
+          for (const m of data.matched) {
+            const { entry, crsSection } = m;
+            
+            // 1. Find indices of existing rows for this class to remove them
+            const indicesToRemove: number[] = [];
+            newEntries.forEach((e, i) => {
+              if (e.subject === entry.subject && e.number === entry.number && e.section === entry.section) {
+                indicesToRemove.push(i);
+              }
+            });
+
+            // 2. Remove old rows (in reverse order to not mess up indices)
+            for (let i = indicesToRemove.length - 1; i >= 0; i--) {
+              newEntries.splice(indicesToRemove[i], 1);
+            }
+
+            // 3. Parse the CRS schedule to get new blocks
+            const parsed = parseCrsSchedule(crsSection.schedule);
+            const blocksToInsert = parsed.blocks.length > 0 
+              ? parsed.blocks 
+              : [{ days: [entry.day || "TBA"], startTime: entry.start || "TBA", endTime: entry.end || "TBA", room: crsSection.remarks }];
+
+            // 4. Insert new authoritative rows
+            for (const block of blocksToInsert) {
+              newEntries.push({
+                day: block.days.join(","),
+                start: block.startTime,
+                end: block.endTime,
+                start_minutes: timeToMinutes(block.startTime),
+                end_minutes: timeToMinutes(block.endTime),
+                course: `${crsSection.subject} ${crsSection.course}`,
+                subject: crsSection.subject,
+                number: crsSection.course,
+                section: crsSection.section,
+                crs_class_code: crsSection.classCode,
+                room: block.room || null,
+                available_slots: crsSection.availableSlots,
+                total_slots: crsSection.totalSlots,
+                enrichment_matched: true,
+              });
+            }
+          }
+          return newEntries;
+        });
+      }
+    } catch (err) {
+      console.warn("Enrichment failed, continuing without it", err);
+      setError("Failed to look up CRS sections. You can still save manually.");
     } finally {
-      setEnriching(false);
+      setIsEnriching(false);
     }
+  }
+
+  // Phase C: Handle manual selection from candidates list
+  function handleCandidateConfirm(cand: any, opt: any) {
+    setEntries((prev) => {
+      const newEntries = prev.filter(
+        (e) => !(e.subject === cand.entry.subject && e.number === cand.entry.number && e.section === cand.entry.section)
+      );
+
+      const parsed = parseCrsSchedule(opt.schedule);
+      const blocksToInsert = parsed.blocks.length > 0 
+        ? parsed.blocks 
+        : [{ days: [cand.entry.day || "TBA"], startTime: cand.entry.start || "TBA", endTime: cand.entry.end || "TBA", room: opt.room }];
+
+      for (const block of blocksToInsert) {
+        newEntries.push({
+          day: block.days.join(","),
+          start: block.startTime,
+          end: block.endTime,
+          start_minutes: timeToMinutes(block.startTime),
+          end_minutes: timeToMinutes(block.endTime),
+          course: `${opt.subject} ${opt.course}`,
+          subject: opt.subject,
+          number: opt.course,
+          section: opt.section,
+          crs_class_code: opt.classCode,
+          room: block.room || opt.room || null,
+          available_slots: opt.availableSlots,
+          total_slots: opt.totalSlots,
+          enrichment_matched: true,
+        });
+      }
+      
+      // Remove this candidate from the UI state
+      setEnrichmentResults((prevRes) => {
+        if (!prevRes) return null;
+        return {
+          ...prevRes,
+          candidates: prevRes.candidates.filter(
+            (c) => !(c.entry.subject === cand.entry.subject && c.entry.number === cand.entry.number)
+          ),
+        };
+      });
+
+      return newEntries;
+    });
   }
 
   async function handleSave() {
@@ -150,10 +259,9 @@ export default function CorrectionPage() {
     setError(null);
 
     try {
-      // Run enrichment first (non-blocking)
-      await handleEnrich();
-
-      // Then save
+      // Note: We no longer call handleEnrich() here to prevent race conditions.
+      // The user should explicitly click "Look up CRS sections" first, review, then save.
+      
       await saveSchedule({
         totalUnits: totalUnits || undefined,
         imagePath,
@@ -175,11 +283,7 @@ export default function CorrectionPage() {
         })),
       });
 
-      // Clear the parsed data from session storage
       sessionStorage.removeItem("parsedSchedule");
-
-      // If this upload came from a group invite, land straight on that
-      // group's weekly schedule instead of the personal one.
       router.push(groupId ? `/groups/${groupId}` : "/schedule");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save schedule");
@@ -220,7 +324,6 @@ export default function CorrectionPage() {
         }
       />
 
-      {/* Content */}
       <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
         {entries.length === 0 ? (
           <div className="paper-grid rounded-[22px] border border-[#D0CEC4] p-12 text-center">
@@ -247,30 +350,14 @@ export default function CorrectionPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-[#D8D6CD]">
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                        Day
-                      </th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                        Start
-                      </th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                        End
-                      </th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                        Course
-                      </th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                        Subject
-                      </th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                        #
-                      </th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                        Section
-                      </th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                        Room
-                      </th>
+                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Day</th>
+                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Start</th>
+                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">End</th>
+                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Course</th>
+                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Subject</th>
+                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">#</th>
+                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Section</th>
+                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Room</th>
                       <th className="w-10 px-2 py-3" />
                     </tr>
                   </thead>
@@ -289,118 +376,88 @@ export default function CorrectionPage() {
                             {isEditing ? (
                               <select
                                 value={entry.day}
-                                onChange={(e) =>
-                                  updateEntry(idx, "day", e.target.value)
-                                }
+                                onChange={(e) => updateEntry(idx, "day", e.target.value)}
                                 className="rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 {DAYS.map((d) => (
-                                  <option key={d} value={d}>
-                                    {d}
-                                  </option>
+                                  <option key={d} value={d}>{d}</option>
                                 ))}
                               </select>
                             ) : (
-                              <span className="font-semibold text-[#214746]">
-                                {entry.day}
-                              </span>
+                              <span className="font-semibold text-[#214746]">{entry.day}</span>
                             )}
                           </td>
                           <td className="px-4 py-3">
                             {isEditing ? (
                               <input
                                 value={entry.start}
-                                onChange={(e) =>
-                                  updateEntry(idx, "start", e.target.value)
-                                }
+                                onChange={(e) => updateEntry(idx, "start", e.target.value)}
                                 className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <span className="text-[#52605C]">
-                                {entry.start}
-                              </span>
+                              <span className="text-[#52605C]">{entry.start}</span>
                             )}
                           </td>
                           <td className="px-4 py-3">
                             {isEditing ? (
                               <input
                                 value={entry.end}
-                                onChange={(e) =>
-                                  updateEntry(idx, "end", e.target.value)
-                                }
+                                onChange={(e) => updateEntry(idx, "end", e.target.value)}
                                 className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <span className="text-[#52605C]">
-                                {entry.end}
-                              </span>
+                              <span className="text-[#52605C]">{entry.end}</span>
                             )}
                           </td>
                           <td className="px-4 py-3">
                             {isEditing ? (
                               <input
                                 value={entry.course}
-                                onChange={(e) =>
-                                  updateEntry(idx, "course", e.target.value)
-                                }
+                                onChange={(e) => updateEntry(idx, "course", e.target.value)}
                                 className="w-full min-w-[150px] rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <span className="font-semibold text-[#214746]">
-                                {entry.course}
-                              </span>
+                              <span className="font-semibold text-[#214746]">{entry.course}</span>
                             )}
                           </td>
                           <td className="px-4 py-3">
                             {isEditing ? (
                               <input
                                 value={entry.subject}
-                                onChange={(e) =>
-                                  updateEntry(idx, "subject", e.target.value)
-                                }
+                                onChange={(e) => updateEntry(idx, "subject", e.target.value)}
                                 className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <span className="text-[#52605C]">
-                                {entry.subject}
-                              </span>
+                              <span className="text-[#52605C]">{entry.subject}</span>
                             )}
                           </td>
                           <td className="px-4 py-3">
                             {isEditing ? (
                               <input
                                 value={entry.number}
-                                onChange={(e) =>
-                                  updateEntry(idx, "number", e.target.value)
-                                }
+                                onChange={(e) => updateEntry(idx, "number", e.target.value)}
                                 className="w-12 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <span className="text-[#52605C]">
-                                {entry.number}
-                              </span>
+                              <span className="text-[#52605C]">{entry.number}</span>
                             )}
                           </td>
                           <td className="px-4 py-3">
                             {isEditing ? (
                               <input
                                 value={entry.section}
-                                onChange={(e) =>
-                                  updateEntry(idx, "section", e.target.value)
-                                }
+                                onChange={(e) => updateEntry(idx, "section", e.target.value)}
                                 className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <span className="text-[#52605C]">
-                                {entry.section}
-                              </span>
+                              <span className="text-[#52605C]">{entry.section}</span>
                             )}
                           </td>
                           <td className="px-4 py-3">
@@ -409,9 +466,7 @@ export default function CorrectionPage() {
                                 {entry.room}
                               </span>
                             ) : (
-                              <span className="text-xs text-[#C8C6BD]">
-                                —
-                              </span>
+                              <span className="text-xs text-[#C8C6BD]">—</span>
                             )}
                           </td>
                           <td className="px-2 py-3">
@@ -432,7 +487,6 @@ export default function CorrectionPage() {
                 </table>
               </div>
 
-              {/* Add Entry Button */}
               <div className="border-t border-[#D8D6CD] px-4 py-3">
                 <button
                   onClick={addEntry}
@@ -443,6 +497,88 @@ export default function CorrectionPage() {
                 </button>
               </div>
             </div>
+
+            {/* Phase C: Enrichment Results UI */}
+            {enrichmentResults && (
+              <div className="mt-8 space-y-6">
+                {/* Candidates */}
+                {enrichmentResults.candidates.length > 0 && (
+                  <div className="rounded-[22px] border border-[#F6D486] bg-[#FFFDF5] p-6 shadow-card">
+                    <h3 className="mb-4 font-display text-lg font-semibold text-[#214746]">
+                      Multiple matches found — please confirm
+                    </h3>
+                    <div className="space-y-4">
+                      {enrichmentResults.candidates.map((cand: any) => (
+                        <div key={`${cand.entry.subject}-${cand.entry.number}-${cand.entry.section}`} className="rounded-xl border border-[#E1DFD7] bg-[#F8F6F0] p-4">
+                          <p className="mb-3 text-sm font-semibold text-[#52605C]">
+                            {cand.entry.subject} {cand.entry.number} (Section {cand.entry.section || "N/A"})
+                          </p>
+                          <div className="space-y-2">
+                            {cand.candidates.map((opt: any) => (
+                              <button
+                                key={opt.classCode}
+                                onClick={() => handleCandidateConfirm(cand, opt)}
+                                className="w-full rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] p-3 text-left transition-colors hover:border-[#56B9AC] hover:bg-[#E4F1EA]"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-[#214746]">
+                                    {opt.section} — {opt.title}
+                                  </span>
+                                  <span className="text-xs font-mono text-[#87908A]">
+                                    {opt.classCode}
+                                  </span>
+                                </div>
+                                <div className="mt-1 text-xs text-[#52605C]">
+                                  <span className="font-semibold">Schedule:</span> {opt.schedule}
+                                </div>
+                                <div className="mt-1 text-xs text-[#52605C]">
+                                  <span className="font-semibold">Instructor:</span> {opt.instructor || "TBA"}
+                                  {opt.room && (
+                                    <>
+                                      {" "}· <span className="font-semibold">Room:</span> {opt.room}
+                                    </>
+                                  )}
+                                </div>
+                                {opt.remarks && (
+                                  <div className="mt-1 text-xs italic text-[#87908A]">
+                                    {opt.remarks}
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Unmatched */}
+                {enrichmentResults.unmatched.length > 0 && (
+                  <div className="rounded-[22px] border border-[#C77A68] bg-[#FCE9E3] p-6 shadow-card">
+                    <h3 className="mb-4 font-display text-lg font-semibold text-[#A14D3F]">
+                      No confident matches found
+                    </h3>
+                    <p className="mb-4 text-sm text-[#A14D3F]">
+                      Please review and manually correct the following entries in the table above:
+                    </p>
+                    <div className="space-y-2">
+                      {enrichmentResults.unmatched.map((unm: any) => (
+                        <div key={`${unm.entry.subject}-${unm.entry.number}-${unm.entry.section}`} className="rounded-lg border border-[#E1DFD7] bg-[#F8F6F0] p-3 text-sm">
+                          <span className="font-semibold text-[#214746]">
+                            {unm.entry.subject} {unm.entry.number}
+                          </span>
+                          <span className="mx-2 text-[#87908A]">|</span>
+                          <span className="text-[#52605C]">Section: {unm.entry.section || "N/A"}</span>
+                          <span className="mx-2 text-[#87908A]">|</span>
+                          <span className="text-xs text-[#A14D3F]">Reason: {unm.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {error && (
               <div className="mt-4 rounded-xl border border-[#C77A68] bg-[#FCE9E3] px-4 py-3 text-xs text-[#A14D3F]">
@@ -461,10 +597,10 @@ export default function CorrectionPage() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={handleEnrich}
-                  disabled={enriching || entries.length === 0}
+                  disabled={isEnriching || entries.length === 0}
                   className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] disabled:opacity-50"
                 >
-                  {enriching ? "Looking up sections…" : "Look up CRS sections"}
+                  {isEnriching ? "Looking up sections…" : "Look up CRS sections"}
                 </button>
                 <button
                   onClick={handleSave}

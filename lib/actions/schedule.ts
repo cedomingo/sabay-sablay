@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { parseCrsSchedule } from '@/lib/crs-monitor/matcher';
 
 export interface ScheduleEntryInput {
   day: string;
@@ -178,4 +179,41 @@ export async function getMySchedule() {
     ...schedule,
     entries: entries || [],
   };
+}
+
+export async function saveEnrichedSchedule(
+  userId: string, scheduleId: string, matched: any[], candidates: any[], unmatched: any[]
+) {
+  const supabase = createClient();
+
+  for (const m of matched) {
+    const { entry, crsSection, confidence } = m;
+    const parsed = parseCrsSchedule(crsSection.schedule);
+
+    // Overwrite behavior: delete existing day-rows for this class
+    await supabase.from('schedule_entries').delete()
+      .eq('schedule_id', scheduleId).eq('subject', entry.subject)
+      .eq('number', entry.number).eq('section', entry.section);
+
+    // Insert new day-rows from CRS data
+    for (const block of parsed.blocks) {
+      await supabase.from('schedule_entries').insert({
+        schedule_id: scheduleId, user_id: userId, day: block.days.join(','),
+        start_display: block.startTime, end_display: block.endTime,
+        subject: entry.subject, number: entry.number, section: crsSection.section,
+        course_raw: entry.course_raw, crs_class_code: crsSection.classCode,
+        room: block.room ?? null, available_slots: crsSection.availableSlots,
+        total_slots: crsSection.totalSlots, instructor: crsSection.instructor,
+        remarks: crsSection.remarks, restrictions: crsSection.restrictions,
+        enrichment_matched: true, match_confidence: confidence, raw_ocr_text: entry.rawText ?? null,
+      });
+    }
+  }
+
+  for (const c of candidates) {
+    await supabase.from('schedule_entries').update({ match_candidates: c.candidates, match_confidence: c.confidence })
+      .eq('schedule_id', scheduleId).eq('subject', c.entry.subject).eq('number', c.entry.number);
+  }
+
+  return { success: true, matchedCount: matched.length };
 }

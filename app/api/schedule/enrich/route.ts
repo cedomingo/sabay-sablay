@@ -1,43 +1,39 @@
-import { createClient } from "@/lib/supabase/server";
-import { enrichEntries } from "@/lib/crs-monitor";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from 'next/server';
+import { matchAllOcrEntries, groupOcrEntries } from '@/lib/crs-monitor/matcher';
+import { getAllSectionsForSubject } from '@/lib/crs-monitor/client';
+import { CrsMonitorError } from '@/lib/crs-monitor/types';
 
-// POST /api/schedule/enrich
-// Accepts an array of parsed schedule entries and enriches them with
-// CRS-Monitor section data (room, class_code, slots).
-export async function POST(request: Request) {
-  const supabase = createClient();
+export const dynamic = 'force-dynamic';
 
-  // Verify the user is authenticated
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json();
-    const { entries } = body as {
-      entries: Array<{ subject: string; number: string; section: string }>;
-    };
+    const body = await req.json();
+    const entries = body.entries;
+    if (!Array.isArray(entries)) return NextResponse.json({ error: 'entries must be an array' }, { status: 400 });
 
-    if (!Array.isArray(entries) || entries.length === 0) {
-      return NextResponse.json(
-        { error: "entries array is required" },
-        { status: 400 }
-      );
+    const grouped = groupOcrEntries(entries);
+    const subjects = Array.from(new Set(grouped.map(g => g.subject).filter(Boolean)));
+    const sectionsBySubject = new Map<string, any[]>();
+
+    for (const subject of subjects) {
+      try {
+        const sections = await getAllSectionsForSubject(subject);
+        sectionsBySubject.set(subject, sections);
+      } catch (e) {
+        if (e instanceof CrsMonitorError) {
+          return NextResponse.json({
+            matched: [], candidates: [],
+            unmatched: entries.map((e: any) => ({ entry: e, reason: 'crs_unreachable', message: e.message })),
+          });
+        }
+        throw e;
+      }
     }
 
-    const enriched = await enrichEntries(entries);
-
-    return NextResponse.json({ enriched });
+    const results = matchAllOcrEntries(grouped, sectionsBySubject);
+    return NextResponse.json(results);
   } catch (error) {
-    console.error("Enrich error:", error);
-    return NextResponse.json(
-      { error: "Failed to enrich entries" },
-      { status: 500 }
-    );
+    console.error('Enrich route error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
