@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Trash2, Plus, AlertCircle } from "lucide-react";
 import { saveSchedule } from "@/lib/actions/schedule";
-import { parseCrsSchedule } from "@/lib/crs-monitor/matcher";
+import { parseScheduleText, formatMinutesAsHHMM, type CrsParsedBlock } from "@/lib/crs-monitor/matcher";
 import AppHeader from "@/components/AppHeader";
 
 interface ParsedEntry {
@@ -172,25 +172,29 @@ export default function CorrectionPage() {
             }
 
             // 3. Parse the CRS schedule to get new blocks
-            const parsed = parseCrsSchedule(crsSection.schedule);
-            const blocksToInsert = parsed.blocks.length > 0 
-              ? parsed.blocks 
-              : [{ days: [entry.day || "TBA"], startTime: entry.start || "TBA", endTime: entry.end || "TBA", room: crsSection.remarks }];
+            const parsedBlocks: CrsParsedBlock[] = parseScheduleText(crsSection.schedule);
+            const blocksToInsert: CrsParsedBlock[] = parsedBlocks.length > 0
+              ? parsedBlocks
+              : [{
+                  days: [entry.day || "TBA"],
+                  startMinutes: entry.start ? timeToMinutes(entry.start) : 0,
+                  endMinutes: entry.end ? timeToMinutes(entry.end) : 0,
+                }];
 
             // 4. Insert new authoritative rows
             for (const block of blocksToInsert) {
               newEntries.push({
                 day: block.days.join(","),
-                start: block.startTime,
-                end: block.endTime,
-                start_minutes: timeToMinutes(block.startTime),
-                end_minutes: timeToMinutes(block.endTime),
+                start: formatMinutesAsHHMM(block.startMinutes),
+                end: formatMinutesAsHHMM(block.endMinutes),
+                start_minutes: block.startMinutes,
+                end_minutes: block.endMinutes,
                 course: `${crsSection.subject} ${crsSection.course}`,
                 subject: crsSection.subject,
                 number: crsSection.course,
                 section: crsSection.section,
                 crs_class_code: crsSection.classCode,
-                room: block.room || null,
+                room: crsSection.remarks || null,
                 available_slots: crsSection.availableSlots,
                 total_slots: crsSection.totalSlots,
                 enrichment_matched: true,
@@ -215,24 +219,28 @@ export default function CorrectionPage() {
         (e) => !(e.subject === cand.entry.subject && e.number === cand.entry.number && e.section === cand.entry.section)
       );
 
-      const parsed = parseCrsSchedule(opt.schedule);
-      const blocksToInsert = parsed.blocks.length > 0 
-        ? parsed.blocks 
-        : [{ days: [cand.entry.day || "TBA"], startTime: cand.entry.start || "TBA", endTime: cand.entry.end || "TBA", room: opt.room }];
+      const parsedBlocks: CrsParsedBlock[] = parseScheduleText(opt.schedule);
+      const blocksToInsert: CrsParsedBlock[] = parsedBlocks.length > 0
+        ? parsedBlocks
+        : [{
+            days: [cand.entry.day || "TBA"],
+            startMinutes: cand.entry.start ? timeToMinutes(cand.entry.start) : 0,
+            endMinutes: cand.entry.end ? timeToMinutes(cand.entry.end) : 0,
+          }];
 
       for (const block of blocksToInsert) {
         newEntries.push({
           day: block.days.join(","),
-          start: block.startTime,
-          end: block.endTime,
-          start_minutes: timeToMinutes(block.startTime),
-          end_minutes: timeToMinutes(block.endTime),
+          start: formatMinutesAsHHMM(block.startMinutes),
+          end: formatMinutesAsHHMM(block.endMinutes),
+          start_minutes: block.startMinutes,
+          end_minutes: block.endMinutes,
           course: `${opt.subject} ${opt.course}`,
           subject: opt.subject,
           number: opt.course,
           section: opt.section,
           crs_class_code: opt.classCode,
-          room: block.room || opt.room || null,
+          room: opt.room || null,
           available_slots: opt.availableSlots,
           total_slots: opt.totalSlots,
           enrichment_matched: true,

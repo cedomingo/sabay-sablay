@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { parseCrsSchedule } from '@/lib/crs-monitor/matcher';
+import { parseScheduleText, formatMinutesAsHHMM } from '@/lib/crs-monitor/matcher';
 
 export interface ScheduleEntryInput {
   day: string;
@@ -188,7 +188,7 @@ export async function saveEnrichedSchedule(
 
   for (const m of matched) {
     const { entry, crsSection, confidence } = m;
-    const parsed = parseCrsSchedule(crsSection.schedule);
+    const blocks = parseScheduleText(crsSection.schedule);
 
     // Overwrite behavior: delete existing day-rows for this class
     await supabase.from('schedule_entries').delete()
@@ -196,13 +196,14 @@ export async function saveEnrichedSchedule(
       .eq('number', entry.number).eq('section', entry.section);
 
     // Insert new day-rows from CRS data
-    for (const block of parsed.blocks) {
+    for (const block of blocks) {
       await supabase.from('schedule_entries').insert({
         schedule_id: scheduleId, user_id: userId, day: block.days.join(','),
-        start_display: block.startTime, end_display: block.endTime,
+        start_display: formatMinutesAsHHMM(block.startMinutes),
+        end_display: formatMinutesAsHHMM(block.endMinutes),
         subject: entry.subject, number: entry.number, section: crsSection.section,
         course_raw: entry.course_raw, crs_class_code: crsSection.classCode,
-        room: block.room ?? null, available_slots: crsSection.availableSlots,
+        room: crsSection.remarks ?? null, available_slots: crsSection.availableSlots,
         total_slots: crsSection.totalSlots, instructor: crsSection.instructor,
         remarks: crsSection.remarks, restrictions: crsSection.restrictions,
         enrichment_matched: true, match_confidence: confidence, raw_ocr_text: entry.rawText ?? null,

@@ -216,6 +216,16 @@ export interface CrsParsedBlock {
   endMinutes: number;
 }
 
+/** Formats minutes-since-midnight as a zero-padded 24h "HHMM" string, the
+ *  same shape callers' own timeToMinutes() parses back (see correction
+ *  page). Used to turn parseScheduleText()'s numeric blocks into the
+ *  display strings the schedule UI/DB expect. */
+export function formatMinutesAsHHMM(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60) % 24;
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}${String(m).padStart(2, "0")}`;
+}
+
 const DAY_TOKEN_PATTERNS: { re: RegExp; code: string }[] = [
   { re: /^Su/i, code: "Su" },
   { re: /^Th/i, code: "Th" },

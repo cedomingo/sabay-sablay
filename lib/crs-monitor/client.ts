@@ -40,9 +40,12 @@ async function fetchWithTimeout<T>(
   }
 }
 
-export async function getSubjects(): Promise<CrsSubject[]> {
+export async function getSubjects(semester?: string): Promise<CrsSubject[]> {
+  const qs = new URLSearchParams();
+  if (semester) qs.set('semester', semester);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
   const data = await fetchWithTimeout<{ subjects: CrsSubject[] }>(
-    `${API_URL}/api/sections/subjects`,
+    `${API_URL}/api/sections/subjects${suffix}`,
     SECTION_TIMEOUT_MS
   );
   return data.subjects ?? [];
@@ -67,6 +70,7 @@ export async function getSections(
   if (params.course) qs.set('course', params.course);
   if (params.limit) qs.set('limit', String(params.limit));
   if (params.offset) qs.set('offset', String(params.offset));
+  if (params.semester) qs.set('semester', params.semester);
   return fetchWithTimeout<GetSectionsResponse>(
     `${API_URL}/api/sections?${qs.toString()}`,
     SECTION_TIMEOUT_MS
@@ -78,12 +82,13 @@ export async function getSections(
  * every section for a subject (matcher does this).
  */
 export async function getAllSectionsForSubject(
-  subject: string
+  subject: string,
+  semester?: string
 ): Promise<CrsSection[]> {
   const all: CrsSection[] = [];
   let offset = 0;
   while (true) {
-    const page = await getSections({ subject, limit: PAGE_CAP, offset });
+    const page = await getSections({ subject, limit: PAGE_CAP, offset, semester });
     all.push(...page.sections);
     if (all.length >= page.total || page.sections.length < PAGE_CAP) break;
     offset += PAGE_CAP;

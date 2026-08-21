@@ -44,6 +44,7 @@ export interface GetSectionsParams {
   course?: string;
   limit?: number;
   offset?: number;
+  semester?: string;
 }
 
 export interface GetSectionsResponse {
