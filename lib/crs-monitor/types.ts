@@ -1,4 +1,3 @@
-import 'server-only';
 
 /**
  * CRS-Monitor wire types — 1:1 with GET /api/sections response.
