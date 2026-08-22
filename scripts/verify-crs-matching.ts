@@ -283,14 +283,14 @@ async function main() {
     parseCrsScheduleBlocks,
     expandParsedBlocks,
   } = await import('../lib/crs-monitor/matcher');
-  const { timeToMinutes, formatMinutesAsDisplay } = await import('../lib/client-ocr/textCleanup');
+  const { timeToMinutes, formatMinutesAsDisplay, canonicalizeCourseVariants } = await import('../lib/client-ocr/textCleanup');
   type ScheduleEntry = import('../lib/client-ocr/types').ScheduleEntry;
 
   // OCR entries shaped exactly like parseScheduleImage()'s output for the
   // attached sample schedule, AFTER the Phase 1-3 fixes (no Sunday ghost
   // rows, Wed classes correctly split into 4 distinct entries, section
   // codes not truncated).
-  const entries: ScheduleEntry[] = [
+  let entries: ScheduleEntry[] = [
     { day: 'Mon', start: '07:00AM', end: '10:00AM', start_minutes: 420, end_minutes: 600, course: 'CWTS 1 Engg DCS', subject: 'CWTS', number: '1', section: 'Engg DCS' },
     { day: 'Tue', start: '07:30AM', end: '08:30AM', start_minutes: 450, end_minutes: 510, course: 'CS 20 THAB', subject: 'CS', number: '20', section: 'THAB' },
     { day: 'Wed', start: '08:30AM', end: '10:00AM', start_minutes: 510, end_minutes: 600, course: 'Math 23 WFR-HR-4', subject: 'Math', number: '23', section: 'WFR-HR-4' },
@@ -311,7 +311,25 @@ async function main() {
     { day: 'Fri', start: '01:00PM', end: '02:30PM', start_minutes: 780, end_minutes: 870, course: 'Eng 13 WFW-4', subject: 'Eng', number: '13', section: 'WFW-4' },
     { day: 'Wed', start: '02:30PM', end: '04:00PM', start_minutes: 870, end_minutes: 960, course: 'Eng 1 WFX-1', subject: 'Eng', number: '1', section: 'WFX-1' },
     { day: 'Fri', start: '02:30PM', end: '04:00PM', start_minutes: 870, end_minutes: 960, course: 'Eng 1 WFX-1', subject: 'Eng', number: '1', section: 'WFX-1' },
+    // Sample schedule 3's clipped Physics reads (the reported bug): the
+    // grid column clips "Physics 72 WFV-HV-4" mid-token, and different
+    // cells OCR to different truncations. Before canonicalization these
+    // grouped as separate classes ("Section WFV-HV" + "Section WFV-H").
+    { day: 'Wed', start: '11:30AM', end: '11:45AM', start_minutes: 690, end_minutes: 705, course: 'Physics 72 WFV-HV-', subject: 'Physics', number: '72', section: 'WFV-HV-' },
+    { day: 'Wed', start: '11:45AM', end: '01:00PM', start_minutes: 705, end_minutes: 780, course: 'Physics 72 WFV-H', subject: 'Physics', number: '72', section: 'WFV-H' },
+    { day: 'Thu', start: '11:45AM', end: '12:45PM', start_minutes: 705, end_minutes: 765, course: 'Physics 72 WFV-HV-', subject: 'Physics', number: '72', section: 'WFV-HV-' },
+    { day: 'Fri', start: '11:30AM', end: '01:00PM', start_minutes: 690, end_minutes: 780, course: 'Physics 72 WFV-H', subject: 'Physics', number: '72', section: 'WFV-H' },
   ];
+
+  // Pipeline parity with parseScheduleImage(): clipped OCR reads of one
+  // class are unified into the most complete variant BEFORE grouping/
+  // matching, exactly where parseSchedule.ts now calls it. The unifier
+  // speaks the pipeline's intermediate CourseTextCell shape (course_raw);
+  // these fixtures are post-pipeline ScheduleEntry rows (course), so map
+  // there and back.
+  entries = canonicalizeCourseVariants(
+    entries.map((e) => ({ ...e, course_raw: e.course }))
+  ).map(({ course_raw, ...rest }) => ({ ...rest, course: course_raw }));
 
   console.log(`\n=== Phase 5 checklist ===\n`);
 
@@ -331,12 +349,17 @@ async function main() {
     ['Eng 13', '01:00PM', '02:30PM'],
     // Trailing space: "Eng 1" alone also startsWith-matches "Eng 13 ..."
     ['Eng 1 ', '02:30PM', '04:00PM'],
+    // Sample-3's clipped Physics cells, post-canonicalization (two partial
+    // Wed reads of the same class)
+    ['Physics 72', '11:30AM', '11:45AM'],
+    ['Physics 72', '11:45AM', '01:00PM'],
   ];
   const wedOk = wed.length === wedExpect.length &&
-    wedExpect.every(([prefix, s, e]) => {
-      const row = wed.find((x) => x.course.startsWith(prefix));
-      return row && row.start === s && row.end === e;
-    });
+    wedExpect.every(([prefix, s, e]) =>
+      // Match on all three fields — a bare course-prefix find() would keep
+      // returning the FIRST Physics/Eng row rather than the asserted slot.
+      wed.some((x) => x.course.startsWith(prefix) && x.start === s && x.end === e)
+    );
   console.log(`[2] Wed = ${wedExpect.length} distinct rows w/ correct ranges: ${wedOk ? 'PASS' : 'FAIL'}`);
   console.log('    ' + wed.map((e) => `${e.course} ${e.start}-${e.end}`).join(' | '));
 
@@ -360,7 +383,7 @@ async function main() {
   }
 
   const groups = groupOcrEntries(entries);
-  console.log(`\nGrouped ${entries.length} day-rows into ${groups.length} classes (expected 9: CWTS1, CS20-THAB, Math23, CS31, Physics72, STS1, Eng13-WFW4, Eng1-WFX1, CS20-THAB/HWX).`);
+  console.log(`\nGrouped ${entries.length} day-rows into ${groups.length} classes (expected 9: CWTS1, CS20-THAB, Math23, CS31, Physics72, STS1, Eng13-WFW4, Eng1-WFX1, CS20-THAB/HWX; sample-3's clipped Physics reads must fold into the ONE Physics72 group).`);
 
   console.log(`\n=== Phase 2 checklist (room / time / course-number mapping) ===\n`);
 
@@ -433,6 +456,29 @@ async function main() {
           : `UNMATCHED: ${r.outcome.reason}`;
   console.log(`[11a] Eng 13 WFW-4 auto-matched despite same-slot WFW-40: ${eng13Ok ? 'PASS' : 'FAIL'} -> ${describe(eng13)}`);
   console.log(`[11b] Eng 1 WFX-1 auto-matched despite same-slot WFX-10: ${eng1Ok ? 'PASS' : 'FAIL'} -> ${describe(eng1)}`);
+
+  // 12. Sample schedule 3 regression: clipped OCR reads of one class
+  // ("Physics 72 WFV-HV-", "Physics 72 WFV-H") must unify into the ONE
+  // existing "Physics 72 WFV-HV-4" group — never two Physics 72 blocks on
+  // the correction page. Also guards that prefix-related but genuinely
+  // distinct classes (CS 20 lecture THAB vs lab THAB/HWX) did NOT get
+  // merged by the unifier (time-overlap rule).
+  const physGroups = groups.filter((g) => g.subject === 'Physics');
+  const cs20Groups = groups.filter((g) => g.subject === 'CS' && g.number === '20');
+  const physMatch = results.find((r) => r.ocrClass.subject === 'Physics');
+  const physOk =
+    physGroups.length === 1 &&
+    physGroups[0].rawText === 'Physics 72 WFV-HV-4' &&
+    physGroups[0].dayRows.length === 7 && // 3 sample-1 rows + 4 unified sample-3 rows
+    !!physMatch &&
+    physMatch.outcome.status === 'matched' &&
+    physMatch.outcome.section.section === 'WFV-HV-4';
+  const cs20Ok = cs20Groups.length === 2;
+  console.log(
+    `[12a] Sample-3 clipped Physics reads -> ONE class, matched WFV-HV-4: ${physOk ? 'PASS' : 'FAIL'} -> ` +
+      `${physGroups.length} group(s), rawText="${physGroups[0]?.rawText}", dayRows=${physGroups[0]?.dayRows.length}, ${describe(physMatch)}`
+  );
+  console.log(`[12b] Lec/lab guard intact (CS 20 THAB vs THAB/HWX still separate groups): ${cs20Ok ? 'PASS' : 'FAIL'}`);
 }
 
 main().catch((e) => {

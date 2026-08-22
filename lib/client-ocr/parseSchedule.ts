@@ -3,7 +3,7 @@ import { loadImage, getImageData, cropAndUpscale } from './canvas';
 import { findCheckmarks } from './checkmarks';
 import { detectLayout } from './layout';
 import { getTotalUnitsRegion } from './regions';
-import { cleanCourseText, splitCourse, timeToMinutes } from './textCleanup';
+import { cleanCourseText, splitCourse, timeToMinutes, canonicalizeCourseVariants } from './textCleanup';
 import { ScheduleEntry, ParsedScheduleResult } from './types';
 
 export type ProgressCallback = (message: string) => void;
@@ -95,13 +95,20 @@ export async function parseScheduleImage(
     }
 
     onProgress?.("Finishing...");
-    entries.sort((a, b) => {
+    // Unify clipped reads of the same class ("Physics 72 WFV-HV-4" vs
+    // "…WFV-HV-" vs "…WFV-H" — cells clip at the column edge) into one
+    // canonical course_raw BEFORE merging/grouping, so one class can't
+    // split into two groups downstream. See textCleanup.ts's
+    // canonicalizeCourseVariants() for the unification rules and the
+    // time-overlap guard that keeps genuinely distinct classes apart.
+    const unifiedEntries = canonicalizeCourseVariants(entries);
+    unifiedEntries.sort((a, b) => {
       if (a.day !== b.day) return a.day.localeCompare(b.day);
       return a.rowIdx - b.rowIdx;
     });
 
     const merged: any[] = [];
-    for (const e of entries) {
+    for (const e of unifiedEntries) {
       if (merged.length > 0) {
         const last = merged[merged.length - 1];
         if (last.day === e.day && last.course_raw === e.course_raw && e.rowIdx === last._lastRowIdx + 1) {
