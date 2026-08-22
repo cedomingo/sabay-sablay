@@ -216,9 +216,40 @@ export default function CorrectionPage() {
   }
 
   // Phase C: New Enrich Handler (Overwrites local state wholesale on match)
+  //
+  // Only rows NOT already confidently matched are sent to
+  // /api/schedule/enrich. Rows carrying enrichment_matched: true (from a
+  // previous confident match or a manual candidate pick) already got their
+  // day/time/room from CRS, so re-sending them would make the server re-fetch
+  // the subject's whole section pool from Turso and re-score them for no
+  // change in input.
+  //
+  // Deliberate choice, no dirty tracking: if the user hand-edits an
+  // already-matched row via updateEntry() (day/time/course text in place),
+  // it is STILL treated as "already matched" and skipped. updateEntry fires
+  // per keystroke with no notion of "dirty", so flipping the flag on edit
+  // would strip the row's CRS room/slots context and skew the "X matched"
+  // header mid-edit, with nothing to restore them until a manual re-check
+  // that isn't wired up. Users who want CRS to re-judge an edited row should
+  // delete it and re-add it (addEntry() creates rows with
+  // enrichment_matched: false, which this handler will send).
   async function handleEnrich(source?: EnrichedEntry[]) {
     const base = source ?? entries;
     if (base.length === 0) return;
+
+    const toLookUp = base.filter((e) => !e.enrichment_matched);
+
+    // Every row is already matched — there is nothing to ask CRS about.
+    // Reset the results panels to empty rather than leaving stale ones up:
+    // leftover candidate/unmatched cards can only reference classes whose
+    // rows have since been deleted or resolved, and keeping them would
+    // contradict the "all matched" header. This early path never flips
+    // isEnriching on (no spinner flash) and never touches entries.
+    if (toLookUp.length === 0) {
+      setEnrichmentResults({ matched: [], candidates: [], unmatched: [] });
+      setError(null);
+      return;
+    }
 
     setIsEnriching(true);
     setError(null);
@@ -240,7 +271,7 @@ export default function CorrectionPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          entries: base.map((e) => ({
+          entries: toLookUp.map((e) => ({
             day: e.day,
             start: e.start,
             end: e.end,
@@ -259,6 +290,12 @@ export default function CorrectionPage() {
       }
 
       const data = await res.json();
+      // data.matched/candidates/unmatched describe ONLY the toLookUp subset
+      // we sent — not all of entries. That's safe below: the removal step
+      // keys on rawCourseKey against full local state, and every skipped
+      // row's key is absent from the response (its OCR class wasn't sent),
+      // so already-matched rows can't be spliced out or overwritten here.
+      // The header counts read off entries state directly, not off data.
       setEnrichmentResults(data);
 
       // Auto-apply confident matches to the local state
@@ -469,6 +506,9 @@ export default function CorrectionPage() {
 
   const matchedCount = entries.filter((e) => e.enrichment_matched).length;
   const needsReviewCount = entries.filter((e) => e.needs_review).length;
+  // Rows handleEnrich() would still send — matched rows are skipped, so this
+  // is what "Look up CRS sections" has left to work on.
+  const unmatchedCount = entries.length - matchedCount;
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
@@ -776,10 +816,15 @@ export default function CorrectionPage() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => handleEnrich()}
-                  disabled={isEnriching || entries.length === 0}
+                  disabled={isEnriching || unmatchedCount === 0}
+                  title="Looks up CRS sections for rows not yet matched; already-matched rows are left untouched"
                   className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] disabled:opacity-50"
                 >
-                  {isEnriching ? "Looking up sections…" : "Look up CRS sections"}
+                  {isEnriching
+                    ? "Looking up sections…"
+                    : matchedCount > 0 && unmatchedCount > 0
+                    ? `Look up CRS sections (${unmatchedCount} left)`
+                    : "Look up CRS sections"}
                 </button>
                 <button
                   onClick={handleSave}
