@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Trash2, Plus, AlertCircle } from "lucide-react";
 import { saveSchedule } from "@/lib/actions/schedule";
-import { parseScheduleText, formatMinutesAsHHMM, type CrsParsedBlock } from "@/lib/crs-monitor/matcher";
+import { parseScheduleText, formatMinutesAsHHMM, expandParsedBlocks, type CrsParsedBlock } from "@/lib/crs-monitor/matcher";
 import AppHeader from "@/components/AppHeader";
 
 interface ParsedEntry {
@@ -239,12 +239,12 @@ export default function CorrectionPage() {
                   start_minutes: r.startMinutes,
                   end_minutes: r.endMinutes,
                 }))
-              : parsedBlocks.map((block) => ({
-                  day: block.days.join(","),
-                  start: formatMinutesAsHHMM(block.startMinutes),
-                  end: formatMinutesAsHHMM(block.endMinutes),
-                  start_minutes: block.startMinutes,
-                  end_minutes: block.endMinutes,
+              : expandParsedBlocks(parsedBlocks).map((row) => ({
+                  day: row.day,
+                  start: formatMinutesAsHHMM(row.startMinutes),
+                  end: formatMinutesAsHHMM(row.endMinutes),
+                  start_minutes: row.startMinutes,
+                  end_minutes: row.endMinutes,
                 }));
 
             // 4. Insert new authoritative rows
@@ -295,12 +295,12 @@ export default function CorrectionPage() {
             start_minutes: r.startMinutes,
             end_minutes: r.endMinutes,
           }))
-        : parsedBlocks.map((block) => ({
-            day: block.days.join(","),
-            start: formatMinutesAsHHMM(block.startMinutes),
-            end: formatMinutesAsHHMM(block.endMinutes),
-            start_minutes: block.startMinutes,
-            end_minutes: block.endMinutes,
+        : expandParsedBlocks(parsedBlocks).map((row) => ({
+            day: row.day,
+            start: formatMinutesAsHHMM(row.startMinutes),
+            end: formatMinutesAsHHMM(row.endMinutes),
+            start_minutes: row.startMinutes,
+            end_minutes: row.endMinutes,
           }));
 
       for (const row of rowsToInsert) {

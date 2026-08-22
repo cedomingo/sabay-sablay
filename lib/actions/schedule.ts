@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { parseScheduleText, formatMinutesAsHHMM } from '@/lib/crs-monitor/matcher';
+import { parseScheduleText, formatMinutesAsHHMM, expandParsedBlocks } from '@/lib/crs-monitor/matcher';
 
 export interface ScheduleEntryInput {
   day: string;
@@ -195,12 +195,14 @@ export async function saveEnrichedSchedule(
       .eq('schedule_id', scheduleId).eq('subject', entry.subject)
       .eq('number', entry.number).eq('section', entry.section);
 
-    // Insert new day-rows from CRS data
-    for (const block of blocks) {
+    // Insert new day-rows from CRS data — one row per single meeting day
+    // (never a comma-joined multi-day string; see expandParsedBlocks()).
+    for (const row of expandParsedBlocks(blocks)) {
       await supabase.from('schedule_entries').insert({
-        schedule_id: scheduleId, user_id: userId, day: block.days.join(','),
-        start_display: formatMinutesAsHHMM(block.startMinutes),
-        end_display: formatMinutesAsHHMM(block.endMinutes),
+        schedule_id: scheduleId, user_id: userId, day: row.day,
+        start_display: formatMinutesAsHHMM(row.startMinutes),
+        end_display: formatMinutesAsHHMM(row.endMinutes),
+        start_minutes: row.startMinutes, end_minutes: row.endMinutes,
         subject: entry.subject, number: entry.number, section: crsSection.section,
         course_raw: entry.course_raw, crs_class_code: crsSection.classCode,
         room: crsSection.remarks ?? null, available_slots: crsSection.availableSlots,

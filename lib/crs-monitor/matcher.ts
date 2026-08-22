@@ -320,6 +320,53 @@ const OCR_DAY_TO_CRS_CODE: Record<string, string> = {
   Sun: "Su",
 };
 
+// Reverse of the map above. CrsParsedBlock.days holds CRS's short day
+// codes, and a single block commonly lists SEVERAL of them at once (e.g.
+// { days: ["T","Th"], ... } for a TTh lecture) — but every consumer of
+// schedule_entries.day (the weekly grid in app/schedule/page.tsx,
+// GroupScheduleGrid, CalendarView's day filtering, and the correction
+// table's day <select>) expects exactly ONE of "Mon"/"Tue"/.../"Sun" per
+// row, matching how non-enriched OCR rows are already stored (one row per
+// single meeting day — see the "day-row grouping" note at the top of this
+// file). Use expandParsedBlocks() below rather than `block.days.join(",")`
+// when turning a block into row(s) to insert/save — a joined value like
+// "T,Th" doesn't equal any single day, so that row silently never renders
+// in any day's column.
+const CRS_CODE_TO_OCR_DAY: Record<string, string> = {
+  M: "Mon",
+  T: "Tue",
+  W: "Wed",
+  Th: "Thu",
+  F: "Fri",
+  S: "Sat",
+  Su: "Sun",
+};
+
+export interface ExpandedDayRow {
+  day: string; // full name, e.g. "Tue" — matches schedule_entries.day
+  startMinutes: number;
+  endMinutes: number;
+}
+
+/**
+ * Expands parsed CRS schedule blocks into one row per single meeting day,
+ * in the app's full-day-name convention. This is the one place that should
+ * ever turn a CrsParsedBlock's `days` array into row(s) — see the
+ * CRS_CODE_TO_OCR_DAY comment above for why a comma-joined day string is
+ * wrong here.
+ */
+export function expandParsedBlocks(blocks: CrsParsedBlock[]): ExpandedDayRow[] {
+  const rows: ExpandedDayRow[] = [];
+  for (const block of blocks) {
+    for (const code of block.days) {
+      const day = CRS_CODE_TO_OCR_DAY[code];
+      if (!day) continue; // unrecognized code — skip rather than store garbage
+      rows.push({ day, startMinutes: block.startMinutes, endMinutes: block.endMinutes });
+    }
+  }
+  return rows;
+}
+
 // ===========================================================================
 // 4. Confidence model
 // ===========================================================================
