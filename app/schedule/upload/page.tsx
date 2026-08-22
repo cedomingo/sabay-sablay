@@ -1,11 +1,15 @@
 "use client";
 
-import { Suspense, useCallback, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
-import { Upload, Check, Loader2 } from "lucide-react";
+import { Upload, Check, Loader2, PlayCircle, X } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { parseScheduleImage } from "@/lib/client-ocr/parseSchedule";
+
+// First-time visitors get a looping tutorial overlay; the flag is set once
+// they dismiss it, and the Tips card keeps a permanent way to replay it.
+const TUTORIAL_SEEN_FLAG = "crsTutorialSeen";
 
 export default function UploadPage() {
   return (
@@ -27,6 +31,28 @@ function UploadPageInner() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  // Checked in an effect (not during render) so SSR markup stays stable.
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (!window.localStorage.getItem(TUTORIAL_SEEN_FLAG)) {
+        setShowTutorial(true);
+      }
+    } catch {
+      // Storage unavailable (private mode etc.) — default to showing it.
+      setShowTutorial(true);
+    }
+  }, []);
+
+  const dismissTutorial = useCallback(() => {
+    setShowTutorial(false);
+    try {
+      window.localStorage.setItem(TUTORIAL_SEEN_FLAG, "1");
+    } catch {
+      // Ignore — worst case the tutorial shows again next visit.
+    }
+  }, []);
 
   const handleFile = useCallback((f: File) => {
     if (!f.type.startsWith("image/")) {
@@ -254,9 +280,18 @@ function UploadPageInner() {
 
         {/* Tips */}
         <div className="mt-8 rounded-[18px] border border-[#D0CEC4] bg-[#F8F6F0] p-5">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-            Tips for best results
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+              Tips for best results
+            </p>
+            <button
+              onClick={() => setShowTutorial(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#C8C6BD] px-2.5 py-1.5 text-xs font-semibold text-[#52605C] hover:bg-[#E7EBE5]"
+            >
+              <PlayCircle size={14} />
+              Watch tutorial
+            </button>
+          </div>
           <ul className="mt-3 space-y-2 text-sm text-[#52605C]">
             <li className="flex items-start gap-2">
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#F4A28C]" />
@@ -273,6 +308,59 @@ function UploadPageInner() {
           </ul>
         </div>
       </div>
+
+      {/* First-time tutorial overlay — looping video, dismissed once. */}
+      {showTutorial && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={dismissTutorial}
+        >
+          <div
+            className="w-full max-w-2xl rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] p-4 shadow-card md:p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between px-1 pb-3">
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                  CRS tutorial
+                </p>
+                <h3 className="mt-0.5 font-display text-lg font-semibold text-[#214746]">
+                  How to grab your schedule
+                </h3>
+              </div>
+              <button
+                onClick={dismissTutorial}
+                aria-label="Close tutorial"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#87908A] hover:bg-[#E7EBE5]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <video
+              src="/crs_tutorial_15s.mp4"
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="w-full overflow-hidden rounded-xl border border-[#D0CEC4] bg-black"
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-3">
+              <p className="text-xs text-[#87908A]">
+                Loops automatically · replay anytime from &ldquo;Watch
+                tutorial&rdquo;
+              </p>
+              <button
+                onClick={dismissTutorial}
+                className="rounded-xl bg-[#214746] px-5 py-2.5 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5"
+              >
+                Got it, start uploading
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
