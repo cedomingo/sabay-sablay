@@ -20,6 +20,7 @@ import {
   groupOcrEntries,
   parseScheduleText,
   CONFIDENCE_THRESHOLD,
+  OCR_DAY_TO_CRS_CODE,
   type OcrGroupedClass,
   type OcrDayRow,
   type CrsParsedBlock,
@@ -28,31 +29,49 @@ import {
 
 const MIN_SECTION_SIGNAL_FOR_AUTO_MATCH = 10;
 const SCHEDULE_TIME_TOLERANCE_MINUTES = 10;
+// scoreScheduleSignal's "exact day+time agreement" band. Exported value is
+// what makes a candidate decisive in the lec/lab tie-break (see the
+// confidence-model notes in matcher.ts).
+const SCHEDULE_EXACT_SIGNAL = 15;
 
 function normalizeSection(s: string): string {
   return s.replace(/[\s-]+/g, "").trim().toUpperCase();
 }
 
-// OCR's ScheduleEntry.day is a full name ("Mon","Tue",...); CRS's day codes
-// are "M","T","W","Th","F","S","Su". Map once, here, rather than scattering
-// this translation across scoring code.
-const OCR_DAY_TO_CRS_CODE: Record<string, string> = {
-  Mon: "M",
-  Tue: "T",
-  Wed: "W",
-  Thu: "Th",
-  Fri: "F",
-  Sat: "S",
-  Sun: "Su",
-};
+/**
+ * Splits an OCR section fragment that may encode an attached lab into its
+ * components: "THAB/HWX" -> ["THAB", "HWX"] (lecture THAB, lab HWX —
+ * CRS-Monitor stores these as SEPARATE section rows). Slash-free
+ * fragments ("WFV") come back as a one-element array. Empty components
+ * (stray slashes) are dropped.
+ */
+export function splitSectionComponents(ocrSection: string): string[] {
+  return ocrSection
+    .split("/")
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
 
+/**
+ * Scores OCR's section fragment against one candidate's CRS section code.
+ * Component-aware (see splitSectionComponents): the compound lecture+lab
+ * text a student's schedule shows ("THAB/HWX") must not be treated as one
+ * opaque substring — the component that names THIS row matches it exactly
+ * (+20), while the other component simply describes a different DB row.
+ * Scoring against every component and taking the best keeps slash-free
+ * fragments behaving exactly as before.
+ */
 function scoreSectionFragment(ocrSection: string, crsSection: string): number {
-  const a = normalizeSection(ocrSection);
   const b = normalizeSection(crsSection);
-  if (!a || !b) return 0;
-  if (a === b) return 20;
-  if (a.includes(b) || b.includes(a)) return 10;
-  return 0;
+  if (!b) return 0;
+  let best = 0;
+  for (const comp of splitSectionComponents(ocrSection)) {
+    const a = normalizeSection(comp);
+    if (!a) continue;
+    if (a === b) return 20;
+    if ((a.includes(b) || b.includes(a)) && best < 10) best = 10;
+  }
+  return best;
 }
 
 function scoreScheduleSignal(dayRows: OcrDayRow[], crsBlocks: CrsParsedBlock[]): number {
@@ -87,12 +106,23 @@ function scoreScheduleSignal(dayRows: OcrDayRow[], crsBlocks: CrsParsedBlock[]):
 export interface ScoredCandidate {
   section: CrsSection;
   confidence: number;
+  /** Per-candidate signal bands, kept on the candidate so the decisive-
+   *  schedule tie-break doesn't have to re-run the scorers, and so the
+   *  client can reuse them when filtering which options are relevant
+   *  enough to show. Optional for wire-shape tolerance. */
+  sectionSignal?: number;
+  scheduleSignal?: number;
 }
 
 export type MatchOutcome =
   | { status: "matched"; section: CrsSection; confidence: number }
   | { status: "candidates"; candidates: ScoredCandidate[] }
-  | { status: "unmatched"; reason: string };
+  // `pool` carries the full scored same-course list (best first) for the
+  // correction page's "Can't find your section? Click here for more
+  // results." escape hatch — the user can manually pick from sections that
+  // didn't clear the confidence threshold. Absent when there is nothing to
+  // offer (subject unresolvable, course number not found).
+  | { status: "unmatched"; reason: string; pool?: ScoredCandidate[] };
 
 /**
  * Resolves an OCR'd subject string to CRS-Monitor's exact spelling by
@@ -153,7 +183,7 @@ export async function matchOcrClass(
       parseScheduleText(section.schedule)
     );
     const confidence = Math.min(100, 40 + 25 + sectionSignal + scheduleSignal);
-    return { section, confidence };
+    return { section, confidence, sectionSignal, scheduleSignal };
   });
 
   scored.sort((a, b) => b.confidence - a.confidence);
@@ -161,11 +191,28 @@ export async function matchOcrClass(
   const qualifying = scored.filter(
     (c) =>
       c.confidence >= CONFIDENCE_THRESHOLD &&
-      scoreSectionFragment(ocrClass.section, c.section.section) >= MIN_SECTION_SIGNAL_FOR_AUTO_MATCH
+      (c.sectionSignal ?? 0) >= MIN_SECTION_SIGNAL_FOR_AUTO_MATCH
   );
 
   if (qualifying.length === 1) {
     return { status: "matched", section: qualifying[0].section, confidence: qualifying[0].confidence };
+  }
+
+  // Lec/lab tie-break: when several candidates qualify (e.g. the THAB
+  // lecture row and the HWX lab row both clear the bar for one of the two
+  // "CS 20" groups), let the group's own OCR'd meeting times decide. If
+  // exactly one candidate agrees with those times EXACTLY (+15 band), it
+  // wins outright — no prompt. Anything less decisive stays a manual pick.
+  if (qualifying.length > 1) {
+    const maxScheduleSignal = Math.max(
+      ...qualifying.map((q) => q.scheduleSignal ?? 0)
+    );
+    if (maxScheduleSignal >= SCHEDULE_EXACT_SIGNAL) {
+      const decisive = qualifying.filter((q) => q.scheduleSignal === maxScheduleSignal);
+      if (decisive.length === 1) {
+        return { status: "matched", section: decisive[0].section, confidence: decisive[0].confidence };
+      }
+    }
   }
 
   if (scored.length === 1 && scored[0].confidence >= CONFIDENCE_THRESHOLD) {
@@ -181,6 +228,7 @@ export async function matchOcrClass(
     return {
       status: "unmatched",
       reason: `${sameCourse.length} same-course candidate(s) found, none met the confidence threshold`,
+      pool: scored,
     };
   }
 

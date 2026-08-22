@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Trash2, Plus, AlertCircle } from "lucide-react";
 import { saveSchedule } from "@/lib/actions/schedule";
-import { parseCrsScheduleBlocks, expandParsedBlocks, extractCrsCourseNumber, type CrsParsedBlock } from "@/lib/crs-monitor/matcher";
+import { parseCrsScheduleBlocks, expandParsedBlocks, extractCrsCourseNumber, OCR_DAY_TO_CRS_CODE, type CrsParsedBlock } from "@/lib/crs-monitor/matcher";
 import { formatMinutesAsDisplay } from "@/lib/client-ocr/textCleanup";
 import AppHeader from "@/components/AppHeader";
 
@@ -57,6 +57,73 @@ function summarizeRooms(section: { schedule: string | null; scheduleBlocksJson: 
     if (block.room && !rooms.includes(block.room)) rooms.push(block.room);
   }
   return rooms.length > 0 ? rooms.join(" / ") : null;
+}
+
+// "Only show relevant": a candidate option that meets nowhere near the OCR
+// group's claimed day/time is noise (e.g. lab rows shown while confirming a
+// lecture). Keep options with a CRS block sharing a meeting day AND starting
+// within this tolerance of the OCR start; if nothing survives — or the
+// section's schedule is unparseable/TBA, so there's nothing to judge by —
+// fall back to the full list rather than dead-ending the user.
+const OPTION_RELEVANCE_TOLERANCE_MINUTES = 90;
+
+function filterRelevantOptions<T extends { section: { scheduleBlocksJson: string; schedule: string | null } }>(
+  scoredOptions: T[],
+  dayRows: Array<{ day: string; startMinutes: number }>
+): T[] {
+  if (!Array.isArray(dayRows) || dayRows.length === 0) return scoredOptions;
+  const kept = scoredOptions.filter((scored) => {
+    const blocks = parseCrsScheduleBlocks(scored.section.scheduleBlocksJson, scored.section.schedule);
+    if (blocks.length === 0) return true;
+    return blocks.some((b) =>
+      dayRows.some((row) => {
+        const code = OCR_DAY_TO_CRS_CODE[row.day];
+        if (!code || !b.days.includes(code)) return false;
+        return Math.abs(b.startMinutes - row.startMinutes) <= OPTION_RELEVANCE_TOLERANCE_MINUTES;
+      })
+    );
+  });
+  return kept.length > 0 ? kept : scoredOptions;
+}
+
+// One pickable CRS-section card, shared by the candidates panel and an
+// unmatched row's expanded "more results" list. `scored` is a ScoredCandidate
+// from /api/schedule/enrich; the real CrsSection fields live on
+// scored.section (reading them off `scored` directly used to crash React with
+// error #31 — objects aren't valid JSX children).
+function SectionOptionButton({ opt, onSelect }: { opt: any; onSelect: () => void }) {
+  const optRooms = summarizeRooms(opt);
+  return (
+    <button
+      onClick={onSelect}
+      className="w-full rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] p-3 text-left transition-colors hover:border-[#56B9AC] hover:bg-[#E4F1EA]"
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-semibold text-[#214746]">
+          {opt.section} — {opt.title}
+        </span>
+        <span className="text-xs font-mono text-[#87908A]">
+          {opt.classCode}
+        </span>
+      </div>
+      <div className="mt-1 text-xs text-[#52605C]">
+        <span className="font-semibold">Schedule:</span> {opt.schedule}
+      </div>
+      <div className="mt-1 text-xs text-[#52605C]">
+        <span className="font-semibold">Instructor:</span> {opt.instructor || "TBA"}
+        {optRooms && (
+          <>
+            {" "}· <span className="font-semibold">Room:</span> {optRooms}
+          </>
+        )}
+      </div>
+      {opt.remarks && (
+        <div className="mt-1 text-xs italic text-[#87908A]">
+          {opt.remarks}
+        </div>
+      )}
+    </button>
+  );
 }
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -134,6 +201,9 @@ export default function CorrectionPage() {
     unmatched: any[];
   } | null>(null);
   const [isEnriching, setIsEnriching] = useState(false);
+  // Unmatched rows whose "Can't find your section? ..." escape hatch is
+  // currently expanded, keyed by the row's raw OCR text.
+  const [expandedUnmatched, setExpandedUnmatched] = useState<Set<string>>(new Set());
 
   const entryGroups = useMemo(() => groupEntriesByClass(entries), [entries]);
 
@@ -444,13 +514,19 @@ export default function CorrectionPage() {
         });
       }
 
-      // Remove this candidate from the UI state
+      // Remove this candidate from the UI state — whether it was offered in
+      // the candidates panel or picked through an unmatched row's "more
+      // results" expansion (both lists are keyed the same way, so a pick
+      // clears it from wherever it was showing).
       setEnrichmentResults((prevRes) => {
         if (!prevRes) return null;
         return {
-          ...prevRes,
+          matched: prevRes.matched,
           candidates: prevRes.candidates.filter(
             (c) => rawCourseKey(c.entry.rawText) !== rawKey
+          ),
+          unmatched: prevRes.unmatched.filter(
+            (u) => rawCourseKey(u.entry.rawText) !== rawKey
           ),
         };
       });
@@ -712,62 +788,34 @@ export default function CorrectionPage() {
                       Multiple matches found — please confirm
                     </h3>
                     <div className="space-y-4">
-                      {enrichmentResults.candidates.map((cand: any) => (
+                      {enrichmentResults.candidates.map((cand: any) => {
+                        // Only show relevant options (see
+                        // filterRelevantOptions): sections whose meeting
+                        // day/time can't plausibly be this row's are hidden.
+                        const options = filterRelevantOptions(
+                          cand.candidates ?? [],
+                          cand.entry?.dayRows ?? []
+                        );
+                        return (
                         <div key={cand.entry.rawText} className="rounded-xl border border-[#E1DFD7] bg-[#F8F6F0] p-4">
                           <p className="mb-3 text-sm font-semibold text-[#52605C]">
                             {cand.entry.subject} {cand.entry.number} (Section {cand.entry.section || "N/A"})
                           </p>
                           <div className="space-y-2">
-                            {cand.candidates.map((scored: any) => {
-                              // `scored` is a ScoredCandidate ({ section: CrsSection,
-                              // confidence: number }) as returned by /api/schedule/enrich
-                              // — the actual CrsSection fields (section code, title,
-                              // classCode, schedule, etc.) live on `scored.section`, not
-                              // on `scored` itself. Reading them off `scored` directly
-                              // used to render the nested CrsSection object as a JSX
-                              // child (e.g. `{scored.section}`), which crashed with
-                              // React error #31 ("objects are not valid as a React
-                              // child"). handleCandidateConfirm's second argument is
-                              // expected to be the flat CrsSection, so pass
-                              // `scored.section` there too.
+                            {options.map((scored: any) => {
                               const opt = scored.section;
-                              const optRooms = summarizeRooms(opt);
                               return (
-                                <button
+                                <SectionOptionButton
                                   key={opt.classCode}
-                                  onClick={() => handleCandidateConfirm(cand, opt)}
-                                  className="w-full rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] p-3 text-left transition-colors hover:border-[#56B9AC] hover:bg-[#E4F1EA]"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="font-semibold text-[#214746]">
-                                      {opt.section} — {opt.title}
-                                    </span>
-                                    <span className="text-xs font-mono text-[#87908A]">
-                                      {opt.classCode}
-                                    </span>
-                                  </div>
-                                  <div className="mt-1 text-xs text-[#52605C]">
-                                    <span className="font-semibold">Schedule:</span> {opt.schedule}
-                                  </div>
-                                  <div className="mt-1 text-xs text-[#52605C]">
-                                    <span className="font-semibold">Instructor:</span> {opt.instructor || "TBA"}
-                                    {optRooms && (
-                                      <>
-                                        {" "}· <span className="font-semibold">Room:</span> {optRooms}
-                                      </>
-                                    )}
-                                  </div>
-                                  {opt.remarks && (
-                                    <div className="mt-1 text-xs italic text-[#87908A]">
-                                      {opt.remarks}
-                                    </div>
-                                  )}
-                                </button>
+                                  opt={opt}
+                                  onSelect={() => handleCandidateConfirm(cand, opt)}
+                                />
                               );
                             })}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -782,8 +830,26 @@ export default function CorrectionPage() {
                       Please review and manually correct the following entries in the table above:
                     </p>
                     <div className="space-y-2">
-                      {enrichmentResults.unmatched.map((unm: any) => (
-                        <div key={unm.entry.rawText} className="rounded-lg border border-[#E1DFD7] bg-[#F8F6F0] p-3 text-sm">
+                      {enrichmentResults.unmatched.map((unm: any, uIdx: number) => {
+                        const unmKey = unm.entry?.rawText ?? `unmatched-${uIdx}`;
+                        // Escape hatch: when matching failed (bad parser
+                        // split, over-strict filters, wrong subject), the
+                        // route still returns the full scored same-course
+                        // pool as `options` when it has one. Collapsed by
+                        // default; expanding reuses the candidate-picker
+                        // cards so the user can pick manually. Rows with no
+                        // pool (subject itself unresolvable) show reason
+                        // only — there is genuinely nothing more to list.
+                        const extraOptions: any[] = Array.isArray(unm.options)
+                          ? unm.options
+                          : [];
+                        const relevantExtra = filterRelevantOptions(
+                          extraOptions,
+                          unm.entry?.dayRows ?? []
+                        );
+                        const isExpanded = expandedUnmatched.has(unmKey);
+                        return (
+                        <div key={unmKey} className="rounded-lg border border-[#E1DFD7] bg-[#F8F6F0] p-3 text-sm">
                           <span className="font-semibold text-[#214746]">
                             {unm.entry.subject} {unm.entry.number}
                           </span>
@@ -791,8 +857,52 @@ export default function CorrectionPage() {
                           <span className="text-[#52605C]">Section: {unm.entry.section || "N/A"}</span>
                           <span className="mx-2 text-[#87908A]">|</span>
                           <span className="text-xs text-[#A14D3F]">Reason: {unm.reason}</span>
+                          {relevantExtra.length > 0 && !isExpanded && (
+                            <button
+                              onClick={() =>
+                                setExpandedUnmatched((prev) => new Set(prev).add(unmKey))
+                              }
+                              className="mt-2 block w-full rounded-lg border border-dashed border-[#C77A68] px-3 py-2 text-left text-xs font-semibold text-[#A14D3F] transition-colors hover:bg-[#FFFDF5]"
+                            >
+                              Can&apos;t find your section? Click here for more results.
+                            </button>
+                          )}
+                          {isExpanded && (
+                            <div className="mt-3 space-y-2">
+                              {relevantExtra.map((scored: any) => {
+                                const opt = scored.section;
+                                return (
+                                  <SectionOptionButton
+                                    key={opt.classCode}
+                                    opt={opt}
+                                    onSelect={() => {
+                                      handleCandidateConfirm(unm, opt);
+                                      setExpandedUnmatched((prev) => {
+                                        const next = new Set(prev);
+                                        next.delete(unmKey);
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                );
+                              })}
+                              <button
+                                onClick={() =>
+                                  setExpandedUnmatched((prev) => {
+                                    const next = new Set(prev);
+                                    next.delete(unmKey);
+                                    return next;
+                                  })
+                                }
+                                className="text-xs font-semibold text-[#52605C] underline"
+                              >
+                                Hide extra results
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

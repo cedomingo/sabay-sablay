@@ -41,12 +41,22 @@ export async function POST(req: NextRequest) {
         candidates: (r.outcome as { status: 'candidates'; candidates: any[] }).candidates,
       }));
 
-    const unmatched = results
-      .filter((r) => r.outcome.status === 'unmatched')
-      .map((r) => ({
-        entry: r.ocrClass,
-        reason: (r.outcome as { status: 'unmatched'; reason: string }).reason,
-      }));
+    // `options` is the full scored same-course pool (best first) whenever
+    // there is one to offer — it powers the correction page's
+    // "Can't find your section?" escape hatch. Absent when matching never
+    // got as far as a course-level pool (unresolvable subject / no such
+    // course number), where there is genuinely nothing more to show.
+    const unmatched = results.flatMap((r) =>
+      r.outcome.status === 'unmatched'
+        ? [{
+            entry: r.ocrClass,
+            reason: r.outcome.reason,
+            ...(r.outcome.pool && r.outcome.pool.length > 0
+              ? { options: r.outcome.pool }
+              : {}),
+          }]
+        : []
+    );
 
     return NextResponse.json({ matched, candidates, unmatched });
   } catch (error) {

@@ -339,8 +339,10 @@ export function parseScheduleText(scheduleText: string | null | undefined): CrsP
 
 // OCR's ScheduleEntry.day is a full name ("Mon","Tue",...); CRS's day codes
 // are "M","T","W","Th","F","S","Su". Map once, here, rather than scattering
-// this translation across scoring code.
-const OCR_DAY_TO_CRS_CODE: Record<string, string> = {
+// this translation across scoring code. Exported: matchServer reuses it for
+// scoring, and correction/page.tsx needs it client-side to compute the
+// day/time overlap used to filter which candidate options are shown.
+export const OCR_DAY_TO_CRS_CODE: Record<string, string> = {
   Mon: "M",
   Tue: "T",
   Wed: "W",
@@ -563,7 +565,11 @@ export function parseCrsScheduleBlocks(
 //        same-subject-same-course-number CrsSection; what's left to settle
 //        is WHICH SECTION.
 //   +20  section fragment: exact match (normalized) between OCR's section
-//        and CRS's section.
+//        and CRS's section. For a compound OCR fragment encoding an
+//        attached lab ("THAB/HWX" = lecture THAB + lab HWX, which
+//        CRS-Monitor stores as SEPARATE section rows), an exact match
+//        against ANY "/"-component counts as exact — the component that
+//        doesn't describe this candidate simply isn't this row.
 //   +10  section fragment: segment/prefix match only (one is a substring
 //        of the other, but not equal) — screenshots can truncate the
 //        section code, so this still counts as real signal, just weaker.
@@ -597,6 +603,18 @@ export function parseCrsScheduleBlocks(
 // it's the sole candidate at-or-above CONFIDENCE_THRESHOLD; ties or
 // multiple qualifying candidates are always returned as "candidates" for
 // manual pick, never auto-resolved by score alone.
+//
+// DECISIVE-SCHEDULE TIE-BREAK (the lec/lab ask-twice fix): one exception
+// to the ties-always-ask rule. A student's schedule legitimately lists the
+// same course twice — "CS 20 THAB" (lecture) and "CS 20 THAB/HWX" (lab) —
+// and before component scoring, BOTH groups used to tie between the THAB
+// lecture row and the HWX lab row, prompting the user for each. Now, when
+// several candidates still qualify, they are filtered to the best schedule
+// signal band; if exactly ONE candidate remains AND it has EXACT day+time
+// agreement (+15), that candidate is auto-matched. The group's own OCR'd
+// meeting times are what pick between lookalike sections, which is the
+// whole point of collecting them. If zero or 2+ candidates survive the
+// filter, the outcome falls through to "candidates" as before.
 
 // Confidence threshold and scoring/matching logic that calls out to
 // CRS-Monitor (resolveCanonicalSubject, matchOcrClass, matchAllOcrEntries,
