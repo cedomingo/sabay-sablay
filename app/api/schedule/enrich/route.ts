@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { matchAllOcrEntries } from '@/lib/crs-monitor/matcher';
+import { matchAllOcrEntries } from '@/lib/crs-monitor/matchServer';
 import { CrsMonitorError } from '@/lib/crs-monitor/types';
 
 type MatchResults = Awaited<ReturnType<typeof matchAllOcrEntries>>;

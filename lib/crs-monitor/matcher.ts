@@ -60,9 +60,16 @@
 //    only as a secondary disambiguating signal (see confidence model).
 // ---------------------------------------------------------------------------
 
-import type { CrsSection } from "./types";
-import { getAllSectionsForSubject, getSubjects } from "./client";
 import type { ScheduleEntry } from "../client-ocr/types";
+
+// NOTE: this file must stay free of any import from "./client" (or
+// anything that transitively imports it). It's imported directly by
+// app/schedule/correction/page.tsx, a "use client" component — pulling in
+// ./client would bundle CRS-Monitor's server-only networking code (and its
+// module-scope `process.env.CRS_MONITOR_API_URL` check) into the browser,
+// which throws at import time and crashes the whole page before it can
+// render anything. Server-only matching logic that does need ./client
+// lives in ./matchServer instead.
 
 // ===========================================================================
 // 1. Re-splitting raw OCR text with CRS's own boundary rule
@@ -128,21 +135,8 @@ export function normalizeSubject(s: string): string {
   return s.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function normalizeSection(s: string): string {
-  return s.replace(/[\s-]+/g, "").trim().toUpperCase();
-}
-
-/** Pulls the number token(s) out of a CRS `course` string (e.g.
- *  "Art Stud 299" -> "299", "CWTS 1 and 2" -> "1 and 2") using the same
- *  boundary rule, so it can be compared against our re-split OCR number. */
-function extractCrsCourseNumber(crsCourse: string): string {
-  // CRS's `course` field is subject+number with no section (section is a
-  // separate field on CrsSection), so this is just the same boundary rule
-  // applied directly — e.g. "Art Stud 299" -> subject "Art Stud", number
-  // "299"; "CWTS 1 and 2" -> number "1 and 2" via the "and <number>"
-  // extension.
-  return reSplitRawCourseText(crsCourse).number;
-}
+// normalizeSection() and extractCrsCourseNumber() moved to ./matchServer —
+// they're only used by the CRS-matching code that lives there now.
 
 // ===========================================================================
 // 2. Grouping OCR's per-day-row entries into one class
@@ -382,165 +376,8 @@ const OCR_DAY_TO_CRS_CODE: Record<string, string> = {
 // multiple qualifying candidates are always returned as "candidates" for
 // manual pick, never auto-resolved by score alone.
 
+// Confidence threshold and scoring/matching logic that calls out to
+// CRS-Monitor (resolveCanonicalSubject, matchOcrClass, matchAllOcrEntries,
+// and their private helpers) now live in ./matchServer — see the note at
+// the top of this file for why.
 export const CONFIDENCE_THRESHOLD = 60;
-const MIN_SECTION_SIGNAL_FOR_AUTO_MATCH = 10;
-const SCHEDULE_TIME_TOLERANCE_MINUTES = 10;
-
-function scoreSectionFragment(ocrSection: string, crsSection: string): number {
-  const a = normalizeSection(ocrSection);
-  const b = normalizeSection(crsSection);
-  if (!a || !b) return 0;
-  if (a === b) return 20;
-  if (a.includes(b) || b.includes(a)) return 10;
-  return 0;
-}
-
-function scoreScheduleSignal(dayRows: OcrDayRow[], crsBlocks: CrsParsedBlock[]): number {
-  if (dayRows.length === 0 || crsBlocks.length === 0) return 0;
-
-  let exactDayAndTime = true;
-  let anyDayOverlap = false;
-
-  for (const row of dayRows) {
-    const crsCode = OCR_DAY_TO_CRS_CODE[row.day];
-    if (!crsCode) {
-      exactDayAndTime = false;
-      continue;
-    }
-    const blocksForDay = crsBlocks.filter((b) => b.days.includes(crsCode));
-    if (blocksForDay.length === 0) {
-      exactDayAndTime = false;
-      continue;
-    }
-    anyDayOverlap = true;
-    const timeMatches = blocksForDay.some(
-      (b) => Math.abs(b.startMinutes - row.startMinutes) <= SCHEDULE_TIME_TOLERANCE_MINUTES
-    );
-    if (!timeMatches) exactDayAndTime = false;
-  }
-
-  if (exactDayAndTime) return 15;
-  if (anyDayOverlap) return 7;
-  return 0;
-}
-
-// ===========================================================================
-// 5. Public matching API
-// ===========================================================================
-
-export interface ScoredCandidate {
-  section: CrsSection;
-  confidence: number;
-}
-
-export type MatchOutcome =
-  | { status: "matched"; section: CrsSection; confidence: number }
-  | { status: "candidates"; candidates: ScoredCandidate[] }
-  | { status: "unmatched"; reason: string };
-
-/**
- * Resolves an OCR'd subject string to CRS-Monitor's exact spelling by
- * checking it against the live subject list (GET /api/sections/subjects),
- * normalized for case/whitespace only. The `subjects` filter on
- * GET /api/sections does an exact string match server-side (see
- * client.ts), so we need CRS's exact casing/spelling before querying —
- * not just our own normalized guess.
- */
-export async function resolveCanonicalSubject(
-  ocrSubject: string,
-  semester?: string
-): Promise<string | null> {
-  const target = normalizeSubject(ocrSubject);
-  if (!target) return null;
-  const subjects = await getSubjects(semester);
-  const found = subjects.find((s) => normalizeSubject(s.subject) === target);
-  return found ? found.subject : null;
-}
-
-function filterByCourseNumber(sections: CrsSection[], ocrNumber: string): CrsSection[] {
-  const target = ocrNumber.replace(/\s+/g, " ").trim().toLowerCase();
-  if (!target) return [];
-  return sections.filter(
-    (s) => extractCrsCourseNumber(s.course).toLowerCase() === target
-  );
-}
-
-/**
- * Matches one grouped OCR class against CRS-Monitor. Fetches the candidate
- * pool for the resolved subject, filters to the matching course number,
- * scores every remaining candidate against section fragment + schedule
- * signal, and returns one of three outcomes — never guesses below
- * threshold.
- */
-export async function matchOcrClass(
-  ocrClass: OcrGroupedClass,
-  semester?: string
-): Promise<MatchOutcome> {
-  const canonicalSubject = await resolveCanonicalSubject(ocrClass.subject, semester);
-  if (!canonicalSubject) {
-    return { status: "unmatched", reason: `No CRS-Monitor subject matches "${ocrClass.subject}"` };
-  }
-
-  const pool = await getAllSectionsForSubject(canonicalSubject, semester);
-  const sameCourse = filterByCourseNumber(pool, ocrClass.number);
-  if (sameCourse.length === 0) {
-    return {
-      status: "unmatched",
-      reason: `No ${canonicalSubject} ${ocrClass.number} sections found in CRS-Monitor`,
-    };
-  }
-
-  const scored: ScoredCandidate[] = sameCourse.map((section) => {
-    const sectionSignal = scoreSectionFragment(ocrClass.section, section.section);
-    const scheduleSignal = scoreScheduleSignal(
-      ocrClass.dayRows,
-      parseScheduleText(section.schedule)
-    );
-    const confidence = Math.min(100, 40 + 25 + sectionSignal + scheduleSignal);
-    return { section, confidence };
-  });
-
-  scored.sort((a, b) => b.confidence - a.confidence);
-
-  const qualifying = scored.filter(
-    (c) =>
-      c.confidence >= CONFIDENCE_THRESHOLD &&
-      scoreSectionFragment(ocrClass.section, c.section.section) >= MIN_SECTION_SIGNAL_FOR_AUTO_MATCH
-  );
-
-  if (qualifying.length === 1) {
-    return { status: "matched", section: qualifying[0].section, confidence: qualifying[0].confidence };
-  }
-
-  if (scored.length === 1 && scored[0].confidence >= CONFIDENCE_THRESHOLD) {
-    // Only one candidate exists at all and it clears the bar, but didn't
-    // clear the section-signal requirement above (e.g. OCR's section
-    // fragment was unreadable). Still surfaced for manual confirmation
-    // rather than auto-applied — see confidence model notes.
-    return { status: "candidates", candidates: scored };
-  }
-
-  const anyAboveThreshold = scored.some((c) => c.confidence >= CONFIDENCE_THRESHOLD);
-  if (!anyAboveThreshold) {
-    return {
-      status: "unmatched",
-      reason: `${sameCourse.length} same-course candidate(s) found, none met the confidence threshold`,
-    };
-  }
-
-  return { status: "candidates", candidates: scored };
-}
-
-/** Convenience wrapper: groups raw ScheduleEntry rows and matches each
- *  resulting class. Order of results matches groupOcrEntries()'s order. */
-export async function matchAllOcrEntries(
-  entries: ScheduleEntry[],
-  semester?: string
-): Promise<{ ocrClass: OcrGroupedClass; outcome: MatchOutcome }[]> {
-  const groups = groupOcrEntries(entries);
-  const results = [];
-  for (const ocrClass of groups) {
-    results.push({ ocrClass, outcome: await matchOcrClass(ocrClass, semester) });
-  }
-  return results;
-}
