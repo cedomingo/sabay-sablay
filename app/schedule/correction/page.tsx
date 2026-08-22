@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Trash2, Plus, AlertCircle } from "lucide-react";
 import { saveSchedule } from "@/lib/actions/schedule";
@@ -46,6 +46,61 @@ function rawCourseKey(course: string): string {
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+// Full names for the read-only block view (e.g. "Tuesday 8:30 - 10:00"),
+// matching the CRS-monitor-style grouped display. Editing still uses the
+// short DAYS codes above — this is display-only.
+const DAY_FULL_NAME: Record<string, string> = {
+  Mon: "Monday",
+  Tue: "Tuesday",
+  Wed: "Wednesday",
+  Thu: "Thursday",
+  Fri: "Friday",
+  Sat: "Saturday",
+  Sun: "Sunday",
+};
+
+const DAY_SORT_INDEX: Record<string, number> = {
+  Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6,
+};
+
+interface EntryGroup {
+  key: string;
+  label: string;
+  items: Array<{ entry: EnrichedEntry; idx: number }>;
+}
+
+/** Groups the flat, one-row-per-meeting-day `entries` array into one block
+ *  per class ("Subject Number"), each holding its own day/time rows —
+ *  matching CRS-monitor's convention of listing a class once with all its
+ *  meeting days underneath, instead of a flat weekly-style row per day.
+ *  This only changes how entries are DISPLAYED; the underlying state is
+ *  still the same flat array, indexed the same way, so editing/deleting a
+ *  line still calls updateEntry/deleteEntry with its original index. */
+function groupEntriesByClass(entries: EnrichedEntry[]): EntryGroup[] {
+  const groups = new Map<string, EntryGroup>();
+
+  entries.forEach((entry, idx) => {
+    const label = `${entry.subject} ${entry.number}`.trim() || entry.course.trim() || "Untitled class";
+    const key = label.toLowerCase();
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, label, items: [] };
+      groups.set(key, group);
+    }
+    group.items.push({ entry, idx });
+  });
+
+  for (const group of groups.values()) {
+    group.items.sort((a, b) => {
+      const dayDiff = (DAY_SORT_INDEX[a.entry.day] ?? 99) - (DAY_SORT_INDEX[b.entry.day] ?? 99);
+      if (dayDiff !== 0) return dayDiff;
+      return (a.entry.start_minutes ?? 0) - (b.entry.start_minutes ?? 0);
+    });
+  }
+
+  return Array.from(groups.values());
+}
+
 export default function CorrectionPage() {
   const router = useRouter();
   const [entries, setEntries] = useState<EnrichedEntry[]>([]);
@@ -64,6 +119,8 @@ export default function CorrectionPage() {
     unmatched: any[];
   } | null>(null);
   const [isEnriching, setIsEnriching] = useState(false);
+
+  const entryGroups = useMemo(() => groupEntriesByClass(entries), [entries]);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("parsedSchedule");
@@ -431,30 +488,31 @@ export default function CorrectionPage() {
           </div>
         ) : (
           <>
-            {/* Editable Table */}
-            <div className="overflow-hidden rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-[#D8D6CD]">
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Day</th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Start</th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">End</th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Course</th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Subject</th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">#</th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Section</th>
-                      <th className="px-4 py-3 text-left font-mono text-[10px] uppercase tracking-widest text-[#87908A]">Room</th>
-                      <th className="w-10 px-2 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry, idx) => {
+            {/* Grouped-by-class blocks — one card per subject/course, each
+                listing its meeting days underneath (CRS-monitor convention),
+                instead of one flat row-per-day table. */}
+            <div className="space-y-4">
+              {entryGroups.map((group) => (
+                <div
+                  key={group.key}
+                  className="overflow-hidden rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D8D6CD] px-4 py-3 md:px-6">
+                    <h3 className="font-display text-base font-semibold text-[#214746]">
+                      {group.label}
+                    </h3>
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                      {group.items.length} {group.items.length === 1 ? "meeting" : "meetings"}
+                    </span>
+                  </div>
+
+                  <div>
+                    {group.items.map(({ entry, idx }) => {
                       const isEditing = editingIdx === idx;
                       return (
-                        <tr
+                        <div
                           key={idx}
-                          className={`border-b border-[#E1DFD7] transition-colors ${
+                          className={`border-b border-[#E1DFD7] px-4 py-3 last:border-b-0 transition-colors md:px-6 ${
                             isEditing
                               ? "bg-[#E4F1EA]"
                               : entry.needs_review
@@ -463,140 +521,119 @@ export default function CorrectionPage() {
                           }`}
                           onClick={() => !isEditing && setEditingIdx(idx)}
                         >
-                          <td className="px-4 py-3">
-                            {isEditing ? (
+                          {isEditing ? (
+                            <div
+                              className="flex flex-wrap items-center gap-2"
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               <select
                                 value={entry.day}
                                 onChange={(e) => updateEntry(idx, "day", e.target.value)}
                                 className="rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
-                                onClick={(e) => e.stopPropagation()}
                               >
                                 {DAYS.map((d) => (
                                   <option key={d} value={d}>{d}</option>
                                 ))}
                               </select>
-                            ) : (
-                              <span className="font-semibold text-[#214746]">{entry.day}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {isEditing ? (
                               <input
                                 value={entry.start}
                                 onChange={(e) => updateEntry(idx, "start", e.target.value)}
+                                placeholder="Start"
                                 className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
-                                onClick={(e) => e.stopPropagation()}
                               />
-                            ) : (
-                              <span className="text-[#52605C]">{entry.start}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {isEditing ? (
+                              <span className="text-[#87908A]">–</span>
                               <input
                                 value={entry.end}
                                 onChange={(e) => updateEntry(idx, "end", e.target.value)}
+                                placeholder="End"
                                 className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
-                                onClick={(e) => e.stopPropagation()}
                               />
-                            ) : (
-                              <span className="text-[#52605C]">{entry.end}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {isEditing ? (
                               <input
                                 value={entry.course}
                                 onChange={(e) => updateEntry(idx, "course", e.target.value)}
-                                className="w-full min-w-[150px] rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
-                                onClick={(e) => e.stopPropagation()}
+                                placeholder="Course"
+                                className="min-w-[150px] flex-1 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
                               />
-                            ) : (
-                              <span className="font-semibold text-[#214746]">
-                                {entry.course}
+                              <input
+                                value={entry.subject}
+                                onChange={(e) => updateEntry(idx, "subject", e.target.value)}
+                                placeholder="Subject"
+                                className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
+                              />
+                              <input
+                                value={entry.number}
+                                onChange={(e) => updateEntry(idx, "number", e.target.value)}
+                                placeholder="#"
+                                className="w-14 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
+                              />
+                              <input
+                                value={entry.section}
+                                onChange={(e) => updateEntry(idx, "section", e.target.value)}
+                                placeholder="Section"
+                                className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
+                              />
+                              <button
+                                onClick={() => deleteEntry(idx)}
+                                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-[#C77A68] hover:bg-[#FCE9E3]"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-3">
+                                <span className="w-24 font-semibold text-[#214746]">
+                                  {DAY_FULL_NAME[entry.day] ?? entry.day}
+                                </span>
+                                <span className="font-mono text-xs text-[#52605C]">
+                                  {entry.start} - {entry.end}
+                                </span>
+                                {entry.section && (
+                                  <span className="text-xs text-[#87908A]">
+                                    Section {entry.section}
+                                  </span>
+                                )}
                                 {entry.needs_review && (
                                   <span
                                     title="CRS-Monitor matched this class but its schedule text didn't parse — please verify the day/time"
-                                    className="ml-2 inline-flex items-center rounded-full bg-[#F6D486] px-2 py-0.5 text-[10px] font-semibold text-[#5A4419]"
+                                    className="inline-flex items-center rounded-full bg-[#F6D486] px-2 py-0.5 text-[10px] font-semibold text-[#5A4419]"
                                   >
                                     Verify time
                                   </span>
                                 )}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {isEditing ? (
-                              <input
-                                value={entry.subject}
-                                onChange={(e) => updateEntry(idx, "subject", e.target.value)}
-                                className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            ) : (
-                              <span className="text-[#52605C]">{entry.subject}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {isEditing ? (
-                              <input
-                                value={entry.number}
-                                onChange={(e) => updateEntry(idx, "number", e.target.value)}
-                                className="w-12 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            ) : (
-                              <span className="text-[#52605C]">{entry.number}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {isEditing ? (
-                              <input
-                                value={entry.section}
-                                onChange={(e) => updateEntry(idx, "section", e.target.value)}
-                                className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            ) : (
-                              <span className="text-[#52605C]">{entry.section}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            {entry.room ? (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-[#D9E7DE] px-2 py-0.5 text-xs font-semibold text-[#286057]">
-                                {entry.room}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-[#C8C6BD]">—</span>
-                            )}
-                          </td>
-                          <td className="px-2 py-3">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteEntry(idx);
-                              }}
-                              className="grid h-7 w-7 place-items-center rounded-lg text-[#C77A68] hover:bg-[#FCE9E3]"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </td>
-                        </tr>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {entry.room ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-[#D9E7DE] px-2 py-0.5 text-xs font-semibold text-[#286057]">
+                                    {entry.room}
+                                  </span>
+                                ) : null}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteEntry(idx);
+                                  }}
+                                  className="grid h-7 w-7 place-items-center rounded-lg text-[#C77A68] hover:bg-[#FCE9E3]"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </div>
+              ))}
 
-              <div className="border-t border-[#D8D6CD] px-4 py-3">
-                <button
-                  onClick={addEntry}
-                  className="inline-flex items-center gap-2 rounded-lg border border-dashed border-[#C8C6BD] px-3 py-2 text-xs font-semibold text-[#87908A] hover:border-[#56B9AC] hover:text-[#214746]"
-                >
-                  <Plus size={14} />
-                  Add entry
-                </button>
-              </div>
+              <button
+                onClick={addEntry}
+                className="inline-flex items-center gap-2 rounded-lg border border-dashed border-[#C8C6BD] bg-[#F8F6F0] px-4 py-3 text-xs font-semibold text-[#87908A] hover:border-[#56B9AC] hover:text-[#214746]"
+              >
+                <Plus size={14} />
+                Add entry
+              </button>
             </div>
 
             {/* Phase C: Enrichment Results UI */}
