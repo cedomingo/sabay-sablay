@@ -1,12 +1,12 @@
 import 'server-only';
 
 // Server-only matching logic: everything here calls out to CRS-Monitor via
-// ./client (which reads process.env.CRS_MONITOR_API_URL and throws at
-// module-load time if it's unset). This file must ONLY be imported from
-// server code (API routes, server actions) — never from a "use client"
-// component or anything it imports, or Next.js will bundle ./client into
-// the browser build and crash on load (undefined env var -> throw at
-// import time -> whole page fails to mount with no visible error).
+// ./client (which reads process.env.CRS_MONITOR_API_URL lazily per-request
+// and throws a CrsMonitorError — not a module-load-time throw — if it's
+// unset; see client.ts's getApiUrl()). This file must ONLY be imported
+// from server code (API routes, server actions) — never from a
+// "use client" component or anything it imports, or Next.js will bundle
+// ./client's networking code into the browser build unnecessarily.
 //
 // Pure/parsing helpers that correction/page.tsx needs (parseScheduleText,
 // formatMinutesAsHHMM, groupOcrEntries, etc.) stay in ./matcher, which has
