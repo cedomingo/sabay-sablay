@@ -347,10 +347,7 @@ function UploadPageInner() {
             />
 
             <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-3">
-              <p className="text-xs text-[#87908A]">
-                Loops automatically · replay anytime from &ldquo;Watch
-                tutorial&rdquo;
-              </p>
+
               <button
                 onClick={dismissTutorial}
                 className="rounded-xl bg-[#214746] px-5 py-2.5 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5"
