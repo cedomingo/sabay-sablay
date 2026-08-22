@@ -2,6 +2,7 @@ import { createWorker } from 'tesseract.js';
 import { loadImage, getImageData, cropAndUpscale } from './canvas';
 import { findCheckmarks } from './checkmarks';
 import { detectLayout } from './layout';
+import { getTotalUnitsRegion } from './regions';
 import { cleanCourseText, splitCourse, timeToMinutes } from './textCleanup';
 import { ScheduleEntry, ParsedScheduleResult } from './types';
 
@@ -25,7 +26,11 @@ export async function parseScheduleImage(
     const { columns, rows } = await detectLayout(img, worker);
 
     onProgress?.("Detecting classes (checkmarks)...");
-    const checkmarks = findCheckmarks(imageData);
+    // Exclude the top-right "Total Units" header region — it's rendered in
+    // the same green as checkmark glyphs and would otherwise be picked up
+    // as a false checkmark (see regions.ts).
+    const totalUnitsRegion = getTotalUnitsRegion(img.width);
+    const checkmarks = findCheckmarks(imageData, [totalUnitsRegion]);
 
     if (checkmarks.length === 0) {
       throw new Error("No green checkmarks detected. Ensure the schedule grid is visible and not cropped.");
@@ -34,10 +39,22 @@ export async function parseScheduleImage(
     onProgress?.("Reading class details...");
     
     const cells: { day: string; rowIdx: number; start: string; end: string; canvas: HTMLCanvasElement }[] = [];
+    // Defense in depth (on top of the geometric exclusion above): flag any
+    // checkmark landing in a day column that's implausible for a typical
+    // schedule, so a future false positive doesn't silently corrupt output.
+    const SUSPECT_DAYS = new Set(['Sun']);
     for (const box of checkmarks) {
       const cx = (box.x0 + box.x1) / 2;
       const col = columns.slice(1).find(c => cx >= c.left && cx < c.right);
       if (!col) continue;
+
+      if (SUSPECT_DAYS.has(col.name)) {
+        console.warn(
+          `[parseSchedule] Checkmark detected in suspect day column "${col.name}" at ` +
+          `(${box.x0},${box.y0})-(${box.x1},${box.y1}). This is uncommon for a typical ` +
+          `schedule — verify this isn't a false positive (e.g. leaking from a header region).`
+        );
+      }
 
       const rowIdx = rows.reduce((bestIdx, r, idx) => {
         return Math.abs(r.y - box.y0) < Math.abs(rows[bestIdx].y - box.y0) ? idx : bestIdx;
@@ -121,10 +138,15 @@ export async function parseScheduleImage(
     let total_units: number | null = null;
     try {
       const topRightCanvas = document.createElement('canvas');
-      topRightCanvas.width = img.width * 0.2;
-      topRightCanvas.height = 50;
+      topRightCanvas.width = totalUnitsRegion.x1 - totalUnitsRegion.x0;
+      topRightCanvas.height = totalUnitsRegion.y1 - totalUnitsRegion.y0;
       const trCtx = topRightCanvas.getContext('2d')!;
-      trCtx.drawImage(img, img.width * 0.8, 0, img.width * 0.2, 50, 0, 0, topRightCanvas.width, topRightCanvas.height);
+      trCtx.drawImage(
+        img,
+        totalUnitsRegion.x0, totalUnitsRegion.y0,
+        totalUnitsRegion.x1 - totalUnitsRegion.x0, totalUnitsRegion.y1 - totalUnitsRegion.y0,
+        0, 0, topRightCanvas.width, topRightCanvas.height
+      );
       
       const trResult = await worker.recognize(topRightCanvas, undefined, { tessedit_pageseg_mode: '8' } as any);
       const trText = trResult.data.text.trim();

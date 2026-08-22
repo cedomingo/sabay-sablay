@@ -5,7 +5,7 @@ export interface BoundingBox {
   y1: number;
 }
 
-export function findCheckmarks(imageData: ImageData): BoundingBox[] {
+export function findCheckmarks(imageData: ImageData, excludeRegions: BoundingBox[] = []): BoundingBox[] {
   const { width, height, data } = imageData;
   const mask = new Uint8Array(width * height);
 
@@ -16,6 +16,24 @@ export function findCheckmarks(imageData: ImageData): BoundingBox[] {
     const b = data[i * 4 + 2];
     if (g > 150 && (g - r) > 30 && (g - b) > 30) {
       mask[i] = 1;
+    }
+  }
+
+  // 1b. Hard geometric exclusion of known non-grid regions (e.g. the
+  // top-right "Total Units" header, which is rendered in the same green as
+  // checkmark glyphs). This is deliberately a pixel-level carve-out done
+  // BEFORE dilation/labeling, not a post-hoc shape/size filter, since
+  // shape/size heuristics are exactly what let the "Total Units" text
+  // through as a false checkmark in the first place.
+  for (const region of excludeRegions) {
+    const x0 = Math.max(0, Math.floor(region.x0));
+    const x1 = Math.min(width, Math.ceil(region.x1));
+    const y0 = Math.max(0, Math.floor(region.y0));
+    const y1 = Math.min(height, Math.ceil(region.y1));
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        mask[y * width + x] = 0;
+      }
     }
   }
 

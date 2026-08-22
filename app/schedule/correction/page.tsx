@@ -25,6 +25,23 @@ interface EnrichedEntry extends ParsedEntry {
   available_slots: number | null;
   total_slots: number | null;
   enrichment_matched: boolean;
+  // True when this row's day/time still comes from OCR because CRS-Monitor's
+  // own `schedule` free-text failed to parse into blocks on an otherwise
+  // confident match (see handleEnrich/handleCandidateConfirm). Surfaced in
+  // the UI as "needs review" rather than silently trusting OCR time next to
+  // CRS-corrected subject/section/room.
+  needs_review: boolean;
+}
+
+/** Builds the key groupOcrEntries()/matchServer use to identify a class:
+ *  the raw OCR course text, whitespace/case normalized. Matching removal
+ *  and dedup logic against this (not the split subject/number/section
+ *  fields) is required because OCR's own splitCourse() can leave those
+ *  fields wrong or empty for multi-word subjects — see matcher.ts's file
+ *  header — while `course` (the raw text) is always populated and is
+ *  exactly what the server re-splits from. */
+function rawCourseKey(course: string): string {
+  return course.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -65,11 +82,24 @@ export default function CorrectionPage() {
         available_slots: null,
         total_slots: null,
         enrichment_matched: false,
+        needs_review: false,
       }));
       setEntries(withEnrichment);
       setImagePath(data.image_path || "");
       setTotalUnits(data.total_units || null);
       setGroupId(data.groupId || null);
+
+      // Run the CRS-Monitor lookup automatically, once, right after
+      // parsing — before the user has to click "Look up CRS sections"
+      // manually. The comment in handleSave() ("we no longer call
+      // handleEnrich() here to prevent race conditions") is about not
+      // re-triggering enrichment on every save; that reasoning doesn't
+      // apply here since this fires exactly once, on mount, before any
+      // save is possible. The manual button still works afterward (e.g.
+      // after the user edits a row and wants to re-check it).
+      if (withEnrichment.length > 0) {
+        void handleEnrich(withEnrichment);
+      }
     } catch {
       router.push("/schedule/upload");
       return;
@@ -77,17 +107,6 @@ export default function CorrectionPage() {
       setLoading(false);
     }
   }, [router]);
-
-  function timeToMinutes(timeStr: string): number {
-    if (!timeStr || timeStr === "TBA") return 0;
-    const clean = timeStr.replace(":", "");
-    if (clean.length === 4 && /^\d{4}$/.test(clean)) {
-      const hours = parseInt(clean.substring(0, 2), 10);
-      const mins = parseInt(clean.substring(2, 4), 10);
-      return hours * 60 + mins;
-    }
-    return 0;
-  }
 
   function updateEntry(idx: number, field: keyof EnrichedEntry, value: string | number | boolean) {
     setEntries((prev) =>
@@ -118,27 +137,47 @@ export default function CorrectionPage() {
         available_slots: null,
         total_slots: null,
         enrichment_matched: false,
+        needs_review: false,
       },
     ]);
     setEditingIdx(entries.length);
   }
 
   // Phase C: New Enrich Handler (Overwrites local state wholesale on match)
-  async function handleEnrich() {
+  async function handleEnrich(source?: EnrichedEntry[]) {
+    const base = source ?? entries;
+    if (base.length === 0) return;
+
     setIsEnriching(true);
     setError(null);
 
     try {
+      // IMPORTANT: this body must be a real ScheduleEntry per class-row —
+      // day/start/end/start_minutes/end_minutes/course/subject/number/section.
+      // That's what groupOcrEntries() (called server-side inside
+      // matchAllOcrEntries) reads; it keys groups on `course` and builds
+      // each group's dayRows from day/start/end/*_minutes. The previous
+      // payload here (subject/number/section/course_raw/rawText) omitted
+      // `course` entirely, so `entry.course.replace(...)` threw a
+      // TypeError server-side on every call — a plain JS exception, not a
+      // CrsMonitorError, so the route's inner catch didn't handle it and it
+      // fell through to the outer 500 handler. That's why "Look up CRS
+      // sections" always failed with the generic message regardless of
+      // CRS_MONITOR_API_URL / network state.
       const res = await fetch("/api/schedule/enrich", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          entries: entries.map((e) => ({
+          entries: base.map((e) => ({
+            day: e.day,
+            start: e.start,
+            end: e.end,
+            start_minutes: e.start_minutes,
+            end_minutes: e.end_minutes,
+            course: e.course,
             subject: e.subject,
             number: e.number,
             section: e.section,
-            course_raw: e.course,
-            rawText: `${e.day} ${e.start}-${e.end}`,
           })),
         }),
       });
@@ -154,14 +193,24 @@ export default function CorrectionPage() {
       if (data.matched && data.matched.length > 0) {
         setEntries((prev) => {
           const newEntries = [...prev];
-          
+
           for (const m of data.matched) {
             const { entry, crsSection } = m;
-            
+            // `entry` here is an OcrGroupedClass (see matcher.ts): its
+            // subject/number/section come from re-splitting the raw OCR
+            // text with CRS's own boundary rule, which deliberately
+            // disagrees with OCR's own splitCourse() for multi-word
+            // subjects (see matcher.ts file header) — exactly the cases
+            // this matching exists to fix. Matching removal against the
+            // OCR rows' *split* subject/number/section would silently fail
+            // to find rows to remove for those cases. Match on the raw
+            // course text instead, which both sides derive from.
+            const rawKey = rawCourseKey(entry.rawText);
+
             // 1. Find indices of existing rows for this class to remove them
             const indicesToRemove: number[] = [];
             newEntries.forEach((e, i) => {
-              if (e.subject === entry.subject && e.number === entry.number && e.section === entry.section) {
+              if (rawCourseKey(e.course) === rawKey) {
                 indicesToRemove.push(i);
               }
             });
@@ -171,24 +220,37 @@ export default function CorrectionPage() {
               newEntries.splice(indicesToRemove[i], 1);
             }
 
-            // 3. Parse the CRS schedule to get new blocks
+            // 3. Parse the CRS schedule to get new blocks. If CRS's own
+            // free-text `schedule` doesn't parse (rare, but real — e.g. an
+            // "Arranged"/TBA section with no fixed schedule string), fall
+            // back to the OCR'd day-rows for time only, and flag the row
+            // as needing manual review rather than silently presenting
+            // OCR's time as if CRS-confirmed. Subject/section/room/class
+            // code still come from CRS either way, since a confident match
+            // means those specific fields ARE known — it's only the time
+            // that's uncertain in this fallback case.
             const parsedBlocks: CrsParsedBlock[] = parseScheduleText(crsSection.schedule);
-            const blocksToInsert: CrsParsedBlock[] = parsedBlocks.length > 0
-              ? parsedBlocks
-              : [{
-                  days: [entry.day || "TBA"],
-                  startMinutes: entry.start ? timeToMinutes(entry.start) : 0,
-                  endMinutes: entry.end ? timeToMinutes(entry.end) : 0,
-                }];
+            const needsReview = parsedBlocks.length === 0;
+            const rowsToInsert = needsReview
+              ? entry.dayRows.map((r: { day: string; start: string; end: string; startMinutes: number; endMinutes: number }) => ({
+                  day: r.day,
+                  start: r.start,
+                  end: r.end,
+                  start_minutes: r.startMinutes,
+                  end_minutes: r.endMinutes,
+                }))
+              : parsedBlocks.map((block) => ({
+                  day: block.days.join(","),
+                  start: formatMinutesAsHHMM(block.startMinutes),
+                  end: formatMinutesAsHHMM(block.endMinutes),
+                  start_minutes: block.startMinutes,
+                  end_minutes: block.endMinutes,
+                }));
 
             // 4. Insert new authoritative rows
-            for (const block of blocksToInsert) {
+            for (const row of rowsToInsert) {
               newEntries.push({
-                day: block.days.join(","),
-                start: formatMinutesAsHHMM(block.startMinutes),
-                end: formatMinutesAsHHMM(block.endMinutes),
-                start_minutes: block.startMinutes,
-                end_minutes: block.endMinutes,
+                ...row,
                 course: `${crsSection.subject} ${crsSection.course}`,
                 subject: crsSection.subject,
                 number: crsSection.course,
@@ -198,6 +260,7 @@ export default function CorrectionPage() {
                 available_slots: crsSection.availableSlots,
                 total_slots: crsSection.totalSlots,
                 enrichment_matched: true,
+                needs_review: needsReview,
               });
             }
           }
@@ -214,46 +277,60 @@ export default function CorrectionPage() {
 
   // Phase C: Handle manual selection from candidates list
   function handleCandidateConfirm(cand: any, opt: any) {
+    // Same removal-key and overwrite semantics as handleEnrich's matched
+    // path, kept identical on purpose (Phase 4 requires the manual-pick
+    // path to behave the same as the auto-matched path).
+    const rawKey = rawCourseKey(cand.entry.rawText);
+
     setEntries((prev) => {
-      const newEntries = prev.filter(
-        (e) => !(e.subject === cand.entry.subject && e.number === cand.entry.number && e.section === cand.entry.section)
-      );
+      const newEntries = prev.filter((e) => rawCourseKey(e.course) !== rawKey);
 
       const parsedBlocks: CrsParsedBlock[] = parseScheduleText(opt.schedule);
-      const blocksToInsert: CrsParsedBlock[] = parsedBlocks.length > 0
-        ? parsedBlocks
-        : [{
-            days: [cand.entry.day || "TBA"],
-            startMinutes: cand.entry.start ? timeToMinutes(cand.entry.start) : 0,
-            endMinutes: cand.entry.end ? timeToMinutes(cand.entry.end) : 0,
-          }];
+      const needsReview = parsedBlocks.length === 0;
+      const rowsToInsert = needsReview
+        ? cand.entry.dayRows.map((r: { day: string; start: string; end: string; startMinutes: number; endMinutes: number }) => ({
+            day: r.day,
+            start: r.start,
+            end: r.end,
+            start_minutes: r.startMinutes,
+            end_minutes: r.endMinutes,
+          }))
+        : parsedBlocks.map((block) => ({
+            day: block.days.join(","),
+            start: formatMinutesAsHHMM(block.startMinutes),
+            end: formatMinutesAsHHMM(block.endMinutes),
+            start_minutes: block.startMinutes,
+            end_minutes: block.endMinutes,
+          }));
 
-      for (const block of blocksToInsert) {
+      for (const row of rowsToInsert) {
         newEntries.push({
-          day: block.days.join(","),
-          start: formatMinutesAsHHMM(block.startMinutes),
-          end: formatMinutesAsHHMM(block.endMinutes),
-          start_minutes: block.startMinutes,
-          end_minutes: block.endMinutes,
+          ...row,
           course: `${opt.subject} ${opt.course}`,
           subject: opt.subject,
           number: opt.course,
           section: opt.section,
           crs_class_code: opt.classCode,
-          room: opt.room || null,
+          // `opt` is a CrsSection (see types.ts) — it has no `.room` field,
+          // only `.remarks`. `opt.room` was always undefined here, so a
+          // manually-confirmed candidate never got a room even though
+          // handleEnrich's auto-match path (which reads crsSection.remarks)
+          // did. Match that convention here too.
+          room: opt.remarks || null,
           available_slots: opt.availableSlots,
           total_slots: opt.totalSlots,
           enrichment_matched: true,
+          needs_review: needsReview,
         });
       }
-      
+
       // Remove this candidate from the UI state
       setEnrichmentResults((prevRes) => {
         if (!prevRes) return null;
         return {
           ...prevRes,
           candidates: prevRes.candidates.filter(
-            (c) => !(c.entry.subject === cand.entry.subject && c.entry.number === cand.entry.number)
+            (c) => rawCourseKey(c.entry.rawText) !== rawKey
           ),
         };
       });
@@ -308,6 +385,7 @@ export default function CorrectionPage() {
   }
 
   const matchedCount = entries.filter((e) => e.enrichment_matched).length;
+  const needsReviewCount = entries.filter((e) => e.needs_review).length;
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
@@ -328,6 +406,7 @@ export default function CorrectionPage() {
         headerActions={
           <p className="text-xs text-[#A9D8CA]">
             {entries.length} entries · {matchedCount} matched to CRS
+            {needsReviewCount > 0 && ` · ${needsReviewCount} need time review`}
           </p>
         }
       />
@@ -376,7 +455,11 @@ export default function CorrectionPage() {
                         <tr
                           key={idx}
                           className={`border-b border-[#E1DFD7] transition-colors ${
-                            isEditing ? "bg-[#E4F1EA]" : "hover:bg-[#E7EBE5]"
+                            isEditing
+                              ? "bg-[#E4F1EA]"
+                              : entry.needs_review
+                              ? "bg-[#FFFDF5] hover:bg-[#FCF6E3]"
+                              : "hover:bg-[#E7EBE5]"
                           }`}
                           onClick={() => !isEditing && setEditingIdx(idx)}
                         >
@@ -429,7 +512,17 @@ export default function CorrectionPage() {
                                 onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
-                              <span className="font-semibold text-[#214746]">{entry.course}</span>
+                              <span className="font-semibold text-[#214746]">
+                                {entry.course}
+                                {entry.needs_review && (
+                                  <span
+                                    title="CRS-Monitor matched this class but its schedule text didn't parse — please verify the day/time"
+                                    className="ml-2 inline-flex items-center rounded-full bg-[#F6D486] px-2 py-0.5 text-[10px] font-semibold text-[#5A4419]"
+                                  >
+                                    Verify time
+                                  </span>
+                                )}
+                              </span>
                             )}
                           </td>
                           <td className="px-4 py-3">
@@ -517,7 +610,7 @@ export default function CorrectionPage() {
                     </h3>
                     <div className="space-y-4">
                       {enrichmentResults.candidates.map((cand: any) => (
-                        <div key={`${cand.entry.subject}-${cand.entry.number}-${cand.entry.section}`} className="rounded-xl border border-[#E1DFD7] bg-[#F8F6F0] p-4">
+                        <div key={cand.entry.rawText} className="rounded-xl border border-[#E1DFD7] bg-[#F8F6F0] p-4">
                           <p className="mb-3 text-sm font-semibold text-[#52605C]">
                             {cand.entry.subject} {cand.entry.number} (Section {cand.entry.section || "N/A"})
                           </p>
@@ -572,7 +665,7 @@ export default function CorrectionPage() {
                     </p>
                     <div className="space-y-2">
                       {enrichmentResults.unmatched.map((unm: any) => (
-                        <div key={`${unm.entry.subject}-${unm.entry.number}-${unm.entry.section}`} className="rounded-lg border border-[#E1DFD7] bg-[#F8F6F0] p-3 text-sm">
+                        <div key={unm.entry.rawText} className="rounded-lg border border-[#E1DFD7] bg-[#F8F6F0] p-3 text-sm">
                           <span className="font-semibold text-[#214746]">
                             {unm.entry.subject} {unm.entry.number}
                           </span>
@@ -604,7 +697,7 @@ export default function CorrectionPage() {
               </button>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={handleEnrich}
+                  onClick={() => handleEnrich()}
                   disabled={isEnriching || entries.length === 0}
                   className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] disabled:opacity-50"
                 >
