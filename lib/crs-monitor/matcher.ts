@@ -615,6 +615,19 @@ export function parseCrsScheduleBlocks(
 // meeting times are what pick between lookalike sections, which is the
 // whole point of collecting them. If zero or 2+ candidates survive the
 // filter, the outcome falls through to "candidates" as before.
+//
+// EXACT-SECTION OVERRIDE (the "Eng 13 WFW-4 asks anyway" fix), applied
+// BEFORE the schedule band above: if exactly one qualifying candidate's
+// normalized section equals the OCR fragment EXACTLY — full-string
+// equality via normalizeSection, which keeps "/" so compound fragments can
+// only ever full-equal a literal compound DB row, never a plain component
+// row — it is auto-matched outright. Real data runs parallel sections of
+// one course at the SAME timeslot (e.g. Eng 13's WFW-x rows all at WF
+// 1-2:30PM); those all tie at +15 schedule signal, and prefix collisions
+// ("WFW" ⊂ "WFW4", "WFW40" ⊃ "WFW4") even qualify beside the true row via
+// the +10 band — yet the screenshot literally states the right code.
+// Asking there is pure friction. Only a UNIQUE full-equality match wins;
+// duplicate section codes or weaker relations still fall through to ask.
 
 // Confidence threshold and scoring/matching logic that calls out to
 // CRS-Monitor (resolveCanonicalSubject, matchOcrClass, matchAllOcrEntries,

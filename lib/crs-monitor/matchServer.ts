@@ -198,6 +198,37 @@ export async function matchOcrClass(
     return { status: "matched", section: qualifying[0].section, confidence: qualifying[0].confidence };
   }
 
+  // Exact-section override (the "Eng 13 WFW-4 asks anyway" fix): when the
+  // OCR'd section fragment names one qualifying candidate's section EXACTLY
+  // — full normalized equality against the whole `section` string, not a
+  // component/prefix hit — that candidate IS the answer, outright. The old
+  // flow only ever broke ties on schedule signal, so parallel sections of
+  // the same course meeting at the SAME timeslot (routine in real data,
+  // e.g. Eng 13's WFW-x rows all at WF 1-2:30PM) tied at +15 and fell
+  // through to a manual prompt even though the screenshot literally states
+  // the section code — and weaker prefix collisions ("WFW" ⊂ "WFW4",
+  // "WFW40" ⊃ "WFW4") could even qualify alongside it via the +10 band.
+  //
+  // normalizeSection() keeps "/" intact, so this cannot hijack the lec/lab
+  // compound case: fragment "THAB/HWX" full-equals only a literal
+  // "THAB/HWX" DB row, never the plain "THAB" lecture (whose +20 comes
+  // from COMPONENT scoring, which deliberately does NOT count as exact
+  // here). If two qualifiers both full-equal (duplicate section codes),
+  // fall through — genuinely ambiguous.
+  const ocrFullNorm = normalizeSection(ocrClass.section);
+  if (ocrFullNorm) {
+    const exactFull = qualifying.filter(
+      (q) => q.section.section && normalizeSection(q.section.section) === ocrFullNorm
+    );
+    if (exactFull.length === 1) {
+      return {
+        status: "matched",
+        section: exactFull[0].section,
+        confidence: exactFull[0].confidence,
+      };
+    }
+  }
+
   // Lec/lab tie-break: when several candidates qualify (e.g. the THAB
   // lecture row and the HWX lab row both clear the bar for one of the two
   // "CS 20" groups), let the group's own OCR'd meeting times decide. If

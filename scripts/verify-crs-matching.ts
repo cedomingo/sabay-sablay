@@ -114,7 +114,7 @@ function section(overrides: Partial<FakeSectionRow>): FakeSectionRow {
   };
 }
 
-const FAKE_SUBJECTS = ['Math', 'CS', 'Physics', 'STS', 'CWTS'];
+const FAKE_SUBJECTS = ['Math', 'CS', 'Physics', 'STS', 'CWTS', 'Eng'];
 
 // remarks is prereq/co-req text (see types.ts) — NOT room, per the
 // corrected schema. Room now lives only in `schedule`'s free text
@@ -173,6 +173,42 @@ const FAKE_SECTIONS: FakeSectionRow[] = [
     class_code: '40001', subject: 'STS', course: 'STS 1', section: 'WFW',
     schedule: 'WF 1-2:30PM Rm401',
     schedule_blocks_json: JSON.stringify([{ days: ['W', 'F'], start: '13:00', end: '14:30' }]),
+  }),
+
+  // Eng 13 / Eng 1 — sample schedule 1 regression fixtures ("still asks
+  // for Eng 13 and Eng 1 verification even though it's clearly WFW-4").
+  // Real CRS data runs PARALLEL sections of one course at the SAME
+  // timeslot, and short section codes substring-collide
+  // ("WFW40".includes("WFW4")), so before the exact-section override both
+  // WFW-4 and WFW-40 qualified at +15 schedule signal (+20 vs +10 section)
+  // and the matcher punted to a manual prompt despite the screenshot
+  // naming the section outright.
+  section({
+    class_code: '70001', subject: 'Eng', course: 'Eng 13', section: 'WFW-4',
+    schedule: 'WF 1-2:30PM Rm701',
+    schedule_blocks_json: JSON.stringify([{ days: ['W', 'F'], start: '13:00', end: '14:30' }]),
+  }),
+  section({
+    class_code: '70002', subject: 'Eng', course: 'Eng 13', section: 'WFW-40',
+    schedule: 'WF 1-2:30PM Rm702',
+    schedule_blocks_json: JSON.stringify([{ days: ['W', 'F'], start: '13:00', end: '14:30' }]),
+  }),
+  // A same-course section with no textual relation to "WFW4" — never
+  // qualifies (sectionSignal 0), proving the override doesn't need it gone.
+  section({
+    class_code: '70003', subject: 'Eng', course: 'Eng 13', section: 'THX-2',
+    schedule: 'TTh 8-9AM Rm703',
+    schedule_blocks_json: JSON.stringify([{ days: ['T', 'Th'], start: '08:00', end: '09:00' }]),
+  }),
+  section({
+    class_code: '71001', subject: 'Eng', course: 'Eng 1', section: 'WFX-1',
+    schedule: 'WF 2:30-4PM Rm711',
+    schedule_blocks_json: JSON.stringify([{ days: ['W', 'F'], start: '14:30', end: '16:00' }]),
+  }),
+  section({
+    class_code: '71002', subject: 'Eng', course: 'Eng 1', section: 'WFX-10',
+    schedule: 'WF 2:30-4PM Rm712',
+    schedule_blocks_json: JSON.stringify([{ days: ['W', 'F'], start: '14:30', end: '16:00' }]),
   }),
 
   // CS 20 — two sections, one whose schedule string is "Arranged"/TBA and
@@ -269,6 +305,12 @@ async function main() {
     { day: 'Fri', start: '10:00AM', end: '11:30AM', start_minutes: 600, end_minutes: 690, course: 'CS 31 WFU', subject: 'CS', number: '31', section: 'WFU' },
     { day: 'Fri', start: '11:30AM', end: '01:00PM', start_minutes: 690, end_minutes: 780, course: 'Physics 72 WFV-HV-4', subject: 'Physics', number: '72', section: 'WFV-HV-4' },
     { day: 'Fri', start: '01:00PM', end: '02:30PM', start_minutes: 780, end_minutes: 870, course: 'STS 1 WFW', subject: 'STS', number: '1', section: 'WFW' },
+    // Sample schedule 1's Eng rows (the reported bug): full section codes
+    // visible in the screenshot, Wed/Fri meetings per the grid.
+    { day: 'Wed', start: '01:00PM', end: '02:30PM', start_minutes: 780, end_minutes: 870, course: 'Eng 13 WFW-4', subject: 'Eng', number: '13', section: 'WFW-4' },
+    { day: 'Fri', start: '01:00PM', end: '02:30PM', start_minutes: 780, end_minutes: 870, course: 'Eng 13 WFW-4', subject: 'Eng', number: '13', section: 'WFW-4' },
+    { day: 'Wed', start: '02:30PM', end: '04:00PM', start_minutes: 870, end_minutes: 960, course: 'Eng 1 WFX-1', subject: 'Eng', number: '1', section: 'WFX-1' },
+    { day: 'Fri', start: '02:30PM', end: '04:00PM', start_minutes: 870, end_minutes: 960, course: 'Eng 1 WFX-1', subject: 'Eng', number: '1', section: 'WFX-1' },
   ];
 
   console.log(`\n=== Phase 5 checklist ===\n`);
@@ -277,14 +319,25 @@ async function main() {
   const sunEntries = entries.filter((e) => e.day === 'Sun');
   console.log(`[1] Ghost Sunday entries: ${sunEntries.length === 0 ? 'PASS (none)' : 'FAIL -> ' + JSON.stringify(sunEntries)}`);
 
-  // 2. Wed distinct rows, correct time ranges
+  // 2. Wed distinct rows, correct time ranges (incl. the Eng 13 / Eng 1
+  // regression rows; STS and Eng 13 share the same Wed slot, so assert per
+  // course instead of by index)
   const wed = entries.filter((e) => e.day === 'Wed');
-  const wedOk = wed.length === 4 &&
-    wed[0].course.startsWith('Math 23') && wed[0].start === '08:30AM' && wed[0].end === '10:00AM' &&
-    wed[1].course.startsWith('CS 31') && wed[1].start === '10:00AM' && wed[1].end === '11:30AM' &&
-    wed[2].course.startsWith('Physics 72') && wed[2].start === '11:30AM' && wed[2].end === '01:00PM' &&
-    wed[3].course.startsWith('STS 1') && wed[3].start === '01:00PM' && wed[3].end === '02:30PM';
-  console.log(`[2] Wed = 4 distinct rows w/ correct ranges: ${wedOk ? 'PASS' : 'FAIL'}`);
+  const wedExpect: Array<[string, string, string]> = [
+    ['Math 23', '08:30AM', '10:00AM'],
+    ['CS 31', '10:00AM', '11:30AM'],
+    ['Physics 72', '11:30AM', '01:00PM'],
+    ['STS 1', '01:00PM', '02:30PM'],
+    ['Eng 13', '01:00PM', '02:30PM'],
+    // Trailing space: "Eng 1" alone also startsWith-matches "Eng 13 ..."
+    ['Eng 1 ', '02:30PM', '04:00PM'],
+  ];
+  const wedOk = wed.length === wedExpect.length &&
+    wedExpect.every(([prefix, s, e]) => {
+      const row = wed.find((x) => x.course.startsWith(prefix));
+      return row && row.start === s && row.end === e;
+    });
+  console.log(`[2] Wed = ${wedExpect.length} distinct rows w/ correct ranges: ${wedOk ? 'PASS' : 'FAIL'}`);
   console.log('    ' + wed.map((e) => `${e.course} ${e.start}-${e.end}`).join(' | '));
 
   // 3. Section codes not truncated (re-split with CRS's own boundary rule)
@@ -307,7 +360,7 @@ async function main() {
   }
 
   const groups = groupOcrEntries(entries);
-  console.log(`\nGrouped ${entries.length} day-rows into ${groups.length} classes (expected 7: CWTS1, CS20-THAB, Math23, CS31, Physics72, STS1, CS20-THAB/HWX).`);
+  console.log(`\nGrouped ${entries.length} day-rows into ${groups.length} classes (expected 9: CWTS1, CS20-THAB, Math23, CS31, Physics72, STS1, Eng13-WFW4, Eng1-WFX1, CS20-THAB/HWX).`);
 
   console.log(`\n=== Phase 2 checklist (room / time / course-number mapping) ===\n`);
 
@@ -358,6 +411,28 @@ async function main() {
   const bareCombined = extractCrsCourseNumber('CWTS 1 and 2');
   const courseNumberOk = bareMath === '23' && bareCombined === '1 and 2';
   console.log(`[10] extractCrsCourseNumber (incl. combined "and"): ${courseNumberOk ? 'PASS' : 'FAIL'} -> "${bareMath}", "${bareCombined}"`);
+
+  // 11. Sample schedule 1 regression: "Eng 13 WFW-4" and "Eng 1 WFX-1"
+  // must AUTO-MATCH their exact sections even though parallel sections
+  // meeting the same timeslot substring-collide with the OCR fragment
+  // ("WFW-40" ⊃ "WFW4", both at WF 1-2:30PM). Before the exact-section
+  // override in matchOcrClass these came back as CANDIDATES and the
+  // correction page asked for manual confirmation.
+  const eng13 = results.find((r) => r.ocrClass.section === 'WFW-4' && r.ocrClass.number === '13');
+  const eng1 = results.find((r) => r.ocrClass.section === 'WFX-1' && r.ocrClass.number === '1');
+  const eng13Ok =
+    eng13?.outcome.status === 'matched' && eng13.outcome.section.section === 'WFW-4';
+  const eng1Ok =
+    eng1?.outcome.status === 'matched' && eng1.outcome.section.section === 'WFX-1';
+  const describe = (r: typeof eng13) =>
+    !r ? 'group not found'
+      : r.outcome.status === 'matched'
+        ? `MATCHED -> ${r.outcome.section.section} (${r.outcome.section.classCode})`
+        : r.outcome.status === 'candidates'
+          ? `CANDIDATES x${r.outcome.candidates.length}: ${r.outcome.candidates.map((c) => `${c.section.section}(${c.confidence})`).join(', ')}`
+          : `UNMATCHED: ${r.outcome.reason}`;
+  console.log(`[11a] Eng 13 WFW-4 auto-matched despite same-slot WFW-40: ${eng13Ok ? 'PASS' : 'FAIL'} -> ${describe(eng13)}`);
+  console.log(`[11b] Eng 1 WFX-1 auto-matched despite same-slot WFX-10: ${eng1Ok ? 'PASS' : 'FAIL'} -> ${describe(eng1)}`);
 }
 
 main().catch((e) => {
