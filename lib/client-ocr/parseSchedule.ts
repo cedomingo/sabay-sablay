@@ -4,6 +4,7 @@ import { findCheckmarks } from './checkmarks';
 import { detectLayout } from './layout';
 import { getTotalUnitsRegion } from './regions';
 import { cleanCourseText, splitCourse, timeToMinutes, canonicalizeCourseVariants } from './textCleanup';
+import { readScheduleWithFallback } from './fallbackParse';
 import { ScheduleEntry, ParsedScheduleResult } from './types';
 
 export type ProgressCallback = (message: string) => void;
@@ -22,76 +23,110 @@ export async function parseScheduleImage(
   });
 
   try {
-    onProgress?.("Reading schedule layout...");
-    const { columns, rows } = await detectLayout(img, worker);
-
-    onProgress?.("Detecting classes (checkmarks)...");
-    // Exclude the top-right "Total Units" header region — it's rendered in
-    // the same green as checkmark glyphs and would otherwise be picked up
-    // as a false checkmark (see regions.ts).
+    // Hoisted above the reader switch so the optional total-units OCR at
+    // the bottom works no matter which reader produced the entries.
     const totalUnitsRegion = getTotalUnitsRegion(img.width);
-    const checkmarks = findCheckmarks(imageData, [totalUnitsRegion]);
 
-    if (checkmarks.length === 0) {
-      throw new Error("No green checkmarks detected. Ensure the schedule grid is visible and not cropped.");
-    }
+    let entries: any[] = [];
 
-    onProgress?.("Reading class details...");
-    
-    const cells: { day: string; rowIdx: number; start: string; end: string; canvas: HTMLCanvasElement }[] = [];
-    // Defense in depth (on top of the geometric exclusion above): flag any
-    // checkmark landing in a day column that's implausible for a typical
-    // schedule, so a future false positive doesn't silently corrupt output.
-    const SUSPECT_DAYS = new Set(['Sun']);
-    for (const box of checkmarks) {
-      const cx = (box.x0 + box.x1) / 2;
-      const col = columns.slice(1).find(c => cx >= c.left && cx < c.right);
-      if (!col) continue;
+    // ---- Primary reader (the original pipeline) ----
+    // Tuned to the classic CRS screenshot: day headers in the top 15%, one
+    // unwrapped time range per row, class text on a single line beside its
+    // checkmark. Anything that breaks those assumptions throws below and is
+    // retried with the alternate reader instead of failing the upload.
+    try {
+      onProgress?.("Reading schedule layout...");
+      const { columns, rows } = await detectLayout(img, worker);
 
-      if (SUSPECT_DAYS.has(col.name)) {
-        console.warn(
-          `[parseSchedule] Checkmark detected in suspect day column "${col.name}" at ` +
-          `(${box.x0},${box.y0})-(${box.x1},${box.y1}). This is uncommon for a typical ` +
-          `schedule — verify this isn't a false positive (e.g. leaking from a header region).`
-        );
+      onProgress?.("Detecting classes (checkmarks)...");
+      // Exclude the top-right "Total Units" header region — it's rendered in
+      // the same green as checkmark glyphs and would otherwise be picked up
+      // as a false checkmark (see regions.ts).
+      const checkmarks = findCheckmarks(imageData, [totalUnitsRegion]);
+
+      if (checkmarks.length === 0) {
+        throw new Error("No green checkmarks detected. Ensure the schedule grid is visible and not cropped.");
       }
 
-      const rowIdx = rows.reduce((bestIdx, r, idx) => {
-        return Math.abs(r.y - box.y0) < Math.abs(rows[bestIdx].y - box.y0) ? idx : bestIdx;
-      }, 0);
-      const row = rows[rowIdx];
+      onProgress?.("Reading class details...");
 
-      const cropLeft = box.x1 + 2;
-      const cropRight = Math.max(cropLeft + 10, col.right - 2);
-      const cropTop = Math.max(0, box.y0 - 6);
-      const cropBottom = box.y1 + 20;
-      const cropWidth = cropRight - cropLeft;
-      const cropHeight = cropBottom - cropTop;
+      const cells: { day: string; rowIdx: number; start: string; end: string; canvas: HTMLCanvasElement }[] = [];
+      // Defense in depth (on top of the geometric exclusion above): flag any
+      // checkmark landing in a day column that's implausible for a typical
+      // schedule, so a future false positive doesn't silently corrupt output.
+      const SUSPECT_DAYS = new Set(['Sun']);
+      for (const box of checkmarks) {
+        const cx = (box.x0 + box.x1) / 2;
+        const col = columns.slice(1).find(c => cx >= c.left && cx < c.right);
+        if (!col) continue;
 
-      if (cropWidth <= 0 || cropHeight <= 0) continue;
+        if (SUSPECT_DAYS.has(col.name)) {
+          console.warn(
+            `[parseSchedule] Checkmark detected in suspect day column "${col.name}" at ` +
+            `(${box.x0},${box.y0})-(${box.x1},${box.y1}). This is uncommon for a typical ` +
+            `schedule — verify this isn't a false positive (e.g. leaking from a header region).`
+          );
+        }
 
-      const cellCanvas = cropAndUpscale(img, cropLeft, cropTop, cropWidth, cropHeight, 2);
-      cells.push({ day: col.name, rowIdx, start: row.start, end: row.end, canvas: cellCanvas });
+        const rowIdx = rows.reduce((bestIdx, r, idx) => {
+          return Math.abs(r.y - box.y0) < Math.abs(rows[bestIdx].y - box.y0) ? idx : bestIdx;
+        }, 0);
+        const row = rows[rowIdx];
+
+        const cropLeft = box.x1 + 2;
+        const cropRight = Math.max(cropLeft + 10, col.right - 2);
+        const cropTop = Math.max(0, box.y0 - 6);
+        const cropBottom = box.y1 + 20;
+        const cropWidth = cropRight - cropLeft;
+        const cropHeight = cropBottom - cropTop;
+
+        if (cropWidth <= 0 || cropHeight <= 0) continue;
+
+        const cellCanvas = cropAndUpscale(img, cropLeft, cropTop, cropWidth, cropHeight, 2);
+        cells.push({ day: col.name, rowIdx, start: row.start, end: row.end, canvas: cellCanvas });
+      }
+
+      for (let i = 0; i < cells.length; i++) {
+        const cell = cells[i];
+        onProgress?.(`Reading class details... (${i + 1}/${cells.length})`);
+
+        // Cast options to 'any' to allow valid Tesseract config keys not in strict TS definitions
+        const result = await worker.recognize(cell.canvas, undefined, { tessedit_pageseg_mode: '7' } as any);
+        const rawText = result.data.text;
+        const text = cleanCourseText(rawText);
+        if (!text) continue;
+
+        entries.push({
+          day: cell.day,
+          rowIdx: cell.rowIdx,
+          start: cell.start,
+          end: cell.end,
+          course_raw: text,
+        });
+      }
+    } catch (primaryError) {
+      // ---- Alternate reader ----
+      // The primary pipeline assumes a well-formed CRS screenshot (headers
+      // inside its fixed windows, unwrapped labels, unclipped edges). When
+      // it cannot build a layout or finds nothing, retry with the geometric
+      // fallback reader instead of failing the whole upload.
+      console.warn("[parseSchedule] Primary reader failed — trying alternate reader.", primaryError);
+      onProgress?.("Primary reader had trouble — trying alternate reader…");
+      entries = [];
+      try {
+        entries = await readScheduleWithFallback(img, imageData, worker, onProgress);
+      } catch (fallbackError) {
+        console.warn("[parseSchedule] Alternate reader failed.", fallbackError);
+      }
+      if (entries.length === 0) {
+        throw primaryError instanceof Error
+          ? primaryError
+          : new Error("Could not read the schedule image.");
+      }
     }
 
-    const entries: any[] = [];
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i];
-      onProgress?.(`Reading class details... (${i + 1}/${cells.length})`);
-      
-      // Cast options to 'any' to allow valid Tesseract config keys not in strict TS definitions
-      const result = await worker.recognize(cell.canvas, undefined, { tessedit_pageseg_mode: '7' } as any);
-      const rawText = result.data.text;
-      const text = cleanCourseText(rawText);
-      if (!text) continue;
-
-      entries.push({
-        day: cell.day,
-        rowIdx: cell.rowIdx,
-        start: cell.start,
-        end: cell.end,
-        course_raw: text,
-      });
+    if (entries.length === 0) {
+      throw new Error("No class entries could be read from this image. Try uploading a clearer screenshot.");
     }
 
     onProgress?.("Finishing...");
