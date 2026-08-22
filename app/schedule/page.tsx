@@ -170,7 +170,7 @@ export default async function SchedulePage({
       <main className="min-h-[100dvh] bg-[#F4F1E9]">
         <AppHeader maxWidth="max-w-6xl" />
 
-        <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
+        <div className="mx-auto max-w-6xl px-4 py-6 md:px-10 md:py-8">
           <ScheduleTabs
             initialTab={initialTab}
             scheduleTab={
@@ -255,13 +255,85 @@ export default async function SchedulePage({
       />
 
       {/* Schedule / Calendar tabs */}
-      <div className="mx-auto max-w-6xl px-6 py-8 md:px-10">
+      <div className="mx-auto max-w-6xl px-4 py-6 md:px-10 md:py-8">
         <ScheduleTabs
           initialTab={initialTab}
           calendarTab={<CalendarView initialTasks={calendarTasks} />}
           scheduleTab={
             <>
-        <div className="overflow-hidden rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card">
+        {/* Mobile view: stacked day cards — no horizontal scrolling.
+            Hidden from md up, where the full timeline grid takes over. */}
+        <div className="space-y-3 md:hidden">
+          {DAYS.map((day) => {
+            const dayEntries = [...schedule.entries]
+              .filter((e) => e.day === day)
+              .sort((a, b) => a.start_minutes - b.start_minutes);
+
+            return (
+              <div
+                key={day}
+                className="overflow-hidden rounded-[18px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card"
+              >
+                <div className="flex items-center justify-between border-b border-[#D8D6CD] px-4 py-3">
+                  <p className={`font-display text-sm font-semibold ${day === "Mon" ? "text-[#A45D42]" : "text-[#214746]"}`}>
+                    {day}
+                  </p>
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                    {dayEntries.length === 0
+                      ? "Free"
+                      : `${dayEntries.length} ${dayEntries.length === 1 ? "class" : "classes"}`}
+                  </span>
+                </div>
+
+                {dayEntries.length === 0 ? (
+                  <p className="px-4 py-3 text-xs text-[#B9BDB4]">
+                    Nothing scheduled
+                  </p>
+                ) : (
+                  <div className="divide-y divide-[#E1DFD7]">
+                    {dayEntries.map((entry) => {
+                      const color = subjectColorMap.get(entry.subject) || COLORS[0];
+                      return (
+                        <div
+                          key={entry.id}
+                          className={`flex items-center gap-3 px-4 py-3 ${
+                            entry.hidden ? "opacity-50" : ""
+                          }`}
+                        >
+                          <span
+                            className={`h-9 w-1.5 shrink-0 rounded-full ${color.bg} ${entry.hidden ? "ring-1 ring-dashed ring-[#C77A68]" : ""}`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-display text-sm font-bold text-[#214746]">
+                              {entry.subject} {entry.number}
+                              {entry.hidden && (
+                                <span className="ml-1 text-[10px] font-normal opacity-70">
+                                  (hidden)
+                                </span>
+                              )}
+                            </p>
+                            <p className="mt-0.5 font-mono text-[11px] text-[#52605C]">
+                              {entry.start_display}&ndash;{entry.end_display}
+                            </p>
+                            {entry.room && (
+                              <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-[#87908A]">
+                                <MapPin size={9} />
+                                {entry.room}
+                              </p>
+                            )}
+                          </div>
+                          <PrivacyToggle entryId={entry.id} initialHidden={entry.hidden} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden overflow-hidden rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card md:block">
           {/* Grid Header */}
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#D8D6CD] px-4 py-4 md:px-6">
             <div>

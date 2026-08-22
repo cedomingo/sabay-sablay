@@ -53,7 +53,7 @@ export default async function ProfilePage() {
         }
       />
 
-      <div className="mx-auto max-w-3xl px-6 py-8 md:px-10 space-y-6">
+      <div className="mx-auto max-w-3xl space-y-6 px-4 py-6 md:px-10 md:py-8">
         {/* Identity card */}
         <div className="rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-6 md:p-8">
           <div className="flex items-start gap-4">

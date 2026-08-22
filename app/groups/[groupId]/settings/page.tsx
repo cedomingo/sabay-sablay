@@ -128,7 +128,7 @@ export default async function GroupSettingsPage({
         }
       />
 
-      <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
+      <div className="mx-auto max-w-4xl px-4 py-6 md:px-10 md:py-8">
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           {/* Members */}
           <div className="rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card">

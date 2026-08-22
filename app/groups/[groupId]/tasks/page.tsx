@@ -83,7 +83,7 @@ export default async function GroupTasksPage({
         }
       />
 
-      <div className="mx-auto max-w-4xl px-6 py-8 md:px-10">
+      <div className="mx-auto max-w-4xl px-4 py-6 md:px-10 md:py-8">
         {tasks.length === 0 ? (
           <div className="space-y-6">
             <div className="flex items-center justify-between">

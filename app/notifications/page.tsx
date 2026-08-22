@@ -28,7 +28,7 @@ export default async function NotificationsPage() {
         }
       />
 
-      <div className="mx-auto max-w-3xl px-6 py-8 md:px-10">
+      <div className="mx-auto max-w-3xl px-4 py-6 md:px-10 md:py-8">
         <NotificationsList initialNotifications={notifications} />
       </div>
     </main>

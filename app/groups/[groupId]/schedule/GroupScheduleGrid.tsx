@@ -183,7 +183,8 @@ export default function GroupScheduleGrid({ entries, members }: Props) {
               Group schedule
             </p>
             <p className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-              Weekly view · hover a block for details
+              Weekly view
+              <span className="hidden md:inline"> · hover a block for details</span>
             </p>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-[#65716B]">
@@ -192,8 +193,9 @@ export default function GroupScheduleGrid({ entries, members }: Props) {
           </div>
         </div>
 
-        {/* Grid Body — continuous, time-based timeline (not a fixed-row table) */}
-        <div className="min-w-[860px] overflow-x-auto p-3 md:p-5">
+        {/* Desktop grid (md+): full timeline, horizontal scroll if narrow.
+            On phones this is replaced by the stacked day list below. */}
+        <div className="hidden min-w-[860px] overflow-x-auto p-3 md:block md:p-5">
           <div className="grid grid-cols-[74px_repeat(7,minmax(104px,1fr))]">
             {/* Day Headers */}
             <div className="h-12" />
@@ -300,6 +302,73 @@ export default function GroupScheduleGrid({ entries, members }: Props) {
               );
             })}
           </div>
+        </div>
+
+        {/* Mobile view (below md): one card per day, every block showing
+            its details inline — the desktop grid's hover tooltip doesn't
+            exist on touch, so nothing depends on it here. */}
+        <div className="md:hidden">
+          {DAYS.map((day) => {
+            const dayBlocks = [...blocks]
+              .filter((b) => b.day === day)
+              .sort((a, b) => a.start_minutes - b.start_minutes);
+
+            return (
+              <div
+                key={day}
+                className={`px-4 py-3 ${
+                  day !== DAYS[DAYS.length - 1] ? "border-b border-[#E1DFD7]" : ""
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <p className={`font-display text-sm font-semibold ${day === "Mon" ? "text-[#A45D42]" : "text-[#214746]"}`}>
+                    {day}
+                  </p>
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                    {dayBlocks.length === 0
+                      ? "Free"
+                      : `${dayBlocks.length} ${dayBlocks.length === 1 ? "block" : "blocks"}`}
+                  </span>
+                </div>
+
+                {dayBlocks.length === 0 ? (
+                  <p className="mt-2 text-xs text-[#B9BDB4]">Nothing scheduled</p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {dayBlocks.map((block) => {
+                      const color = getColorForPerson(block.user_id);
+                      return (
+                        <div
+                          key={block.id}
+                          className={`flex items-center gap-3 rounded-xl border p-3 ${color.bg} ${color.text} ${color.border}`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-display text-sm font-bold leading-tight">
+                              {block.subject} {block.number}
+                            </p>
+                            <p className="mt-0.5 truncate font-mono text-[10px] opacity-80">
+                              {block.full_name}
+                              {block.section ? ` · Section ${block.section}` : ""}
+                            </p>
+                            <p className="mt-0.5 font-mono text-[10px] opacity-75">
+                              {block.start_display}&ndash;{block.end_display}
+                              {block.room && (
+                                <>
+                                  {" · "}
+                                  <MapPin size={9} className="inline" />
+                                  {` ${block.room}`}
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

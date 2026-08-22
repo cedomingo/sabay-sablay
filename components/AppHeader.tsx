@@ -38,12 +38,13 @@ export default function AppHeader({
   headerActions,
 }: AppHeaderProps) {
   return (
-    <div className="grain relative bg-[#214746] px-6 py-6 text-[#F4F1E9] md:px-10">
+    <div className="grain relative bg-[#214746] px-4 py-4 text-[#F4F1E9] sm:px-6 sm:py-6 md:px-10">
       <div className={`mx-auto ${maxWidth} relative z-10`}>
-        {/* Top row: Branding + Nav */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[#F4A28C] text-[#214746]">
+        {/* Top row: Branding + Nav — wraps below the brand when it can't
+            fit side-by-side (small phones), instead of overflowing. */}
+        <div className="flex flex-wrap items-center justify-between gap-y-3">
+          <div className="flex items-center gap-2.5 md:gap-3">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#F4A28C] text-[#214746]">
               <LayoutGrid size={18} />
             </div>
             <span className="font-display text-sm font-bold tracking-tight">
@@ -51,13 +52,13 @@ export default function AppHeader({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2">
             {navItems.map((item, idx) => (
               item.href ? (
                 <Link
                   key={idx}
                   href={item.href}
-                  className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-[#A9D8CA]/30 px-2.5 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855]"
                 >
                   {item.icon}
                   {item.label}
@@ -72,7 +73,7 @@ export default function AppHeader({
                 <SubmitButton
                   icon={<LogOut size={14} />}
                   pendingChildren="Signing out..."
-                  className="inline-flex items-center gap-2 rounded-xl border border-[#A9D8CA]/30 px-3 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855] disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-[#A9D8CA]/30 px-2.5 py-2 text-xs font-semibold text-[#A9D8CA] hover:bg-[#2B5855] disabled:opacity-60"
                 >
                   Sign out
                 </SubmitButton>
@@ -83,10 +84,10 @@ export default function AppHeader({
 
         {/* Optional subtitle row */}
         {(subtitle || title || headerActions) && (
-          <div className="mt-6">
+          <div className="mt-4 md:mt-6">
             {subtitle}
             {title && (
-              <div className="mt-3 flex items-end justify-between">
+              <div className="mt-3 flex flex-wrap items-end justify-between gap-2">
                 <div>{title}</div>
                 {headerActions && <div>{headerActions}</div>}
               </div>

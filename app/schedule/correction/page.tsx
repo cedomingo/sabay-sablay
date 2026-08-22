@@ -610,7 +610,7 @@ export default function CorrectionPage() {
         }
       />
 
-      <div className="mx-auto max-w-5xl px-6 py-8 md:px-10">
+      <div className="mx-auto max-w-5xl px-4 py-6 md:px-10 md:py-8">
         {entries.length === 0 ? (
           <div className="paper-grid rounded-[22px] border border-[#D0CEC4] p-12 text-center">
             <AlertCircle className="mx-auto text-[#F6D486]" size={32} />
@@ -915,20 +915,20 @@ export default function CorrectionPage() {
               </div>
             )}
 
-            {/* Actions */}
-            <div className="mt-6 flex items-center justify-between">
+            {/* Actions — stacks full-width on phones, row on sm+ */}
+            <div className="mt-6 flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 onClick={() => router.push(groupId ? `/schedule/upload?groupId=${groupId}` : "/schedule/upload")}
-                className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5]"
+                className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] sm:w-auto"
               >
                 Upload different file
               </button>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <button
                   onClick={() => handleEnrich()}
                   disabled={isEnriching || unmatchedCount === 0}
                   title="Looks up CRS sections for rows not yet matched; already-matched rows are left untouched"
-                  className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] disabled:opacity-50"
+                  className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] disabled:opacity-50 sm:w-auto"
                 >
                   {isEnriching
                     ? "Looking up sections…"
@@ -939,7 +939,7 @@ export default function CorrectionPage() {
                 <button
                   onClick={handleSave}
                   disabled={saving || entries.length === 0}
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#214746] px-6 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5 disabled:opacity-60"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#214746] px-6 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5 disabled:opacity-60 sm:w-auto"
                 >
                   {saving ? (
                     <>
