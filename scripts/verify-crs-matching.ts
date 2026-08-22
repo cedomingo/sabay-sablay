@@ -313,11 +313,13 @@ async function main() {
     { day: 'Fri', start: '02:30PM', end: '04:00PM', start_minutes: 870, end_minutes: 960, course: 'Eng 1 WFX-1', subject: 'Eng', number: '1', section: 'WFX-1' },
     // Sample schedule 3's clipped Physics reads (the reported bug): the
     // grid column clips "Physics 72 WFV-HV-4" mid-token, and different
-    // cells OCR to different truncations. Before canonicalization these
-    // grouped as separate classes ("Section WFV-HV" + "Section WFV-H").
+    // cells OCR to different truncations AND lookalike misreads of the
+    // last visible glyph ("WFV-HW" for "WFV-HV"). Before canonicalization
+    // these grouped as separate classes ("Section WFV-HV" + "Section
+    // WFV-H\").
     { day: 'Wed', start: '11:30AM', end: '11:45AM', start_minutes: 690, end_minutes: 705, course: 'Physics 72 WFV-HV-', subject: 'Physics', number: '72', section: 'WFV-HV-' },
-    { day: 'Wed', start: '11:45AM', end: '01:00PM', start_minutes: 705, end_minutes: 780, course: 'Physics 72 WFV-H', subject: 'Physics', number: '72', section: 'WFV-H' },
-    { day: 'Thu', start: '11:45AM', end: '12:45PM', start_minutes: 705, end_minutes: 765, course: 'Physics 72 WFV-HV-', subject: 'Physics', number: '72', section: 'WFV-HV-' },
+    { day: 'Wed', start: '11:45AM', end: '01:00PM', start_minutes: 705, end_minutes: 780, course: 'Physics 72 WFV-H\\', subject: 'Physics', number: '72', section: 'WFV-H\\' },
+    { day: 'Thu', start: '11:45AM', end: '12:45PM', start_minutes: 705, end_minutes: 765, course: 'Physics 72 WFV-HW', subject: 'Physics', number: '72', section: 'WFV-HW' },
     { day: 'Fri', start: '11:30AM', end: '01:00PM', start_minutes: 690, end_minutes: 780, course: 'Physics 72 WFV-H', subject: 'Physics', number: '72', section: 'WFV-H' },
   ];
 
@@ -475,7 +477,7 @@ async function main() {
     physMatch.outcome.section.section === 'WFV-HV-4';
   const cs20Ok = cs20Groups.length === 2;
   console.log(
-    `[12a] Sample-3 clipped Physics reads -> ONE class, matched WFV-HV-4: ${physOk ? 'PASS' : 'FAIL'} -> ` +
+    `[12a] Sample-3 clipped/misread Physics reads -> ONE class, matched WFV-HV-4: ${physOk ? 'PASS' : 'FAIL'} -> ` +
       `${physGroups.length} group(s), rawText="${physGroups[0]?.rawText}", dayRows=${physGroups[0]?.dayRows.length}, ${describe(physMatch)}`
   );
   console.log(`[12b] Lec/lab guard intact (CS 20 THAB vs THAB/HWX still separate groups): ${cs20Ok ? 'PASS' : 'FAIL'}`);

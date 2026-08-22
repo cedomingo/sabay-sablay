@@ -63,18 +63,24 @@ export function formatMinutesAsDisplay(totalMinutes: number): string {
 //
 // Unification requires ALL of:
 //   1. same subject+number after splitCourse() (case-insensitive),
-//   2. section identities (lowercase, alphanumerics only — hyphens/spaces
-//      are clip noise) equal or PREFIX of one another (truncations form a
-//      prefix chain; the longest read wins),
+//   2. section identities (lowercase, alphanumerics only — hyphens/spaces/
+//      slashes are clip noise) related: equal, one a PREFIX of the other
+//      (truncations form a prefix chain; the longest read wins), OR equal
+//      except for ONE divergent final character — Tesseract renders a
+//      half-clipped glyph as an arbitrary lookalike ("WFV-HV" vs
+//      "WFV-HW"), so requiring pure prefixes misses real families,
 //   3. time-compatible: on any SHARED day the cells' time ranges overlap
 //      or directly ABUT (a class's own grid slots tile contiguously).
 //      Rule 3 is what keeps genuinely different classes apart even when
-//      their codes are prefix-related: CS 20 "THAB" (lecture, TTh
+//      their codes are textually close: CS 20 "THAB" (lecture, TTh
 //      7:30-8:30) vs "THAB/HWX" (lab, Th 1-4PM) share the Thursday column
 //      but sit hours apart, so they stay separate groups and the
-//      matcher's lec/lab handling is untouched. Same-day overlap/adjacency
-//      holds for true truncation families because every cell of one class
-//      sits in its class's own grid slots.
+//      matcher's lec/lab handling is untouched. Likewise two parallel
+//      sections of one course (WFX-1 vs WFX-2) can never appear in ONE
+//      student's schedule at overlapping times — rule 3 needs a conflict
+//      to merge at all. Same-day overlap/adjacency holds for true
+//      truncation families because every cell of one class sits in its
+//      class's own grid slots.
 //
 // Cells whose splitCourse() yields no section (nothing to compare) are
 // passed through untouched. Input is not mutated; rewritten cells are new
@@ -109,6 +115,21 @@ function longestSecMember(
   );
 }
 
+/** True when two section identities plausibly describe the same code:
+ *  equal, one a prefix of the other (clipping), or differing in exactly
+ *  ONE final character (clip noise misreading the last visible glyph) —
+ *  common prefix must then cover all but the shorter's last char, and
+ *  lengths differ by at most one. Codes diverging EARLIER ("THAB" vs
+ *  "THX2", "WFUM4" vs "WFUN4") stay unrelated. */
+function sectionCodesRelated(a: string, b: string): boolean {
+  if (a === b || a.startsWith(b) || b.startsWith(a)) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  const minLen = Math.min(a.length, b.length);
+  let common = 0;
+  while (common < minLen && a[common] === b[common]) common++;
+  return common >= minLen - 1;
+}
+
 export function canonicalizeCourseVariants<T extends CourseTextCell>(cells: T[]): T[] {
   const meta = cells.map((cell) => {
     const { subject, number, section } = splitCourse(cell.course_raw);
@@ -125,11 +146,7 @@ export function canonicalizeCourseVariants<T extends CourseTextCell>(cells: T[])
     for (let c = 0; c < clusters.length && home === -1; c++) {
       const repIdx = longestSecMember(clusters[c], meta);
       if (meta[i].key !== meta[repIdx].key) continue;
-      const repSec = meta[repIdx].sec;
-      const mySec = meta[i].sec;
-      if (!(repSec === mySec || repSec.startsWith(mySec) || mySec.startsWith(repSec))) {
-        continue;
-      }
+      if (!sectionCodesRelated(meta[repIdx].sec, meta[i].sec)) continue;
       if (!clusters[c].every((j) => timesCompatible(cells[i], cells[j]))) continue;
       home = c;
     }
