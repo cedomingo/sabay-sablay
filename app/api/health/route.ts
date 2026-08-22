@@ -13,7 +13,8 @@ export async function GET() {
     SUPABASE_SERVICE_ROLE_KEY: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     OCR_SERVICE_URL: Boolean(process.env.OCR_SERVICE_URL),
     OCR_SERVICE_KEY: Boolean(process.env.OCR_SERVICE_KEY),
-    CRS_MONITOR_API_URL: Boolean(process.env.CRS_MONITOR_API_URL),
+    CRS_MONITOR_TURSO_URL: Boolean(process.env.CRS_MONITOR_TURSO_URL),
+    CRS_MONITOR_TURSO_AUTH_TOKEN: Boolean(process.env.CRS_MONITOR_TURSO_AUTH_TOKEN),
   };
 
   return NextResponse.json({

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Trash2, Plus, AlertCircle } from "lucide-react";
 import { saveSchedule } from "@/lib/actions/schedule";
-import { parseScheduleText, formatMinutesAsHHMM, expandParsedBlocks, type CrsParsedBlock } from "@/lib/crs-monitor/matcher";
+import { parseCrsScheduleBlocks, expandParsedBlocks, extractCrsCourseNumber, type CrsParsedBlock } from "@/lib/crs-monitor/matcher";
+import { formatMinutesAsDisplay } from "@/lib/client-ocr/textCleanup";
 import AppHeader from "@/components/AppHeader";
 
 interface ParsedEntry {
@@ -42,6 +43,20 @@ interface EnrichedEntry extends ParsedEntry {
  *  exactly what the server re-splits from. */
 function rawCourseKey(course: string): string {
   return course.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Summarizes a CrsSection's room(s) for the candidate-picker preview,
+ *  before the user has picked (so there's no single "this row's room" yet
+ *  — a lec+lab section can have a different room per meeting segment).
+ *  Distinct room values, in schedule order, joined with " / "; null if
+ *  none parsed. */
+function summarizeRooms(section: { schedule: string | null; scheduleBlocksJson: string }): string | null {
+  const blocks = parseCrsScheduleBlocks(section.scheduleBlocksJson, section.schedule);
+  const rooms: string[] = [];
+  for (const block of blocks) {
+    if (block.room && !rooms.includes(block.room)) rooms.push(block.room);
+  }
+  return rooms.length > 0 ? rooms.join(" / ") : null;
 }
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -220,7 +235,7 @@ export default function CorrectionPage() {
       // CrsMonitorError, so the route's inner catch didn't handle it and it
       // fell through to the outer 500 handler. That's why "Look up CRS
       // sections" always failed with the generic message regardless of
-      // CRS_MONITOR_API_URL / network state.
+      // CRS_MONITOR_TURSO_URL/CRS_MONITOR_TURSO_AUTH_TOKEN / network state.
       const res = await fetch("/api/schedule/enrich", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -277,16 +292,21 @@ export default function CorrectionPage() {
               newEntries.splice(indicesToRemove[i], 1);
             }
 
-            // 3. Parse the CRS schedule to get new blocks. If CRS's own
-            // free-text `schedule` doesn't parse (rare, but real — e.g. an
-            // "Arranged"/TBA section with no fixed schedule string), fall
-            // back to the OCR'd day-rows for time only, and flag the row
-            // as needing manual review rather than silently presenting
-            // OCR's time as if CRS-confirmed. Subject/section/room/class
-            // code still come from CRS either way, since a confident match
-            // means those specific fields ARE known — it's only the time
-            // that's uncertain in this fallback case.
-            const parsedBlocks: CrsParsedBlock[] = parseScheduleText(crsSection.schedule);
+            // 3. Parse CRS's structured scheduleBlocksJson (paired with
+            // room from the `schedule` free text — see
+            // parseCrsScheduleBlocks) to get new blocks. If it comes back
+            // empty (rare, but real — e.g. an "Arranged"/TBA section with
+            // no fixed schedule), fall back to the OCR'd day-rows for time
+            // only, and flag the row as needing manual review rather than
+            // silently presenting OCR's time as if CRS-confirmed. Room is
+            // unknown in that fallback too, for the same reason. Subject/
+            // section/class code still come from CRS either way, since a
+            // confident match means those specific fields ARE known — it's
+            // only time (and room, which depends on it) that's uncertain.
+            const parsedBlocks: CrsParsedBlock[] = parseCrsScheduleBlocks(
+              crsSection.scheduleBlocksJson,
+              crsSection.schedule
+            );
             const needsReview = parsedBlocks.length === 0;
             const rowsToInsert = needsReview
               ? entry.dayRows.map((r: { day: string; start: string; end: string; startMinutes: number; endMinutes: number }) => ({
@@ -295,25 +315,27 @@ export default function CorrectionPage() {
                   end: r.end,
                   start_minutes: r.startMinutes,
                   end_minutes: r.endMinutes,
+                  room: null as string | null,
                 }))
               : expandParsedBlocks(parsedBlocks).map((row) => ({
                   day: row.day,
-                  start: formatMinutesAsHHMM(row.startMinutes),
-                  end: formatMinutesAsHHMM(row.endMinutes),
+                  start: formatMinutesAsDisplay(row.startMinutes),
+                  end: formatMinutesAsDisplay(row.endMinutes),
                   start_minutes: row.startMinutes,
                   end_minutes: row.endMinutes,
+                  room: row.room ?? null,
                 }));
 
             // 4. Insert new authoritative rows
+            const bareNumber = extractCrsCourseNumber(crsSection.course);
             for (const row of rowsToInsert) {
               newEntries.push({
                 ...row,
-                course: `${crsSection.subject} ${crsSection.course}`,
+                course: `${crsSection.subject} ${bareNumber}`,
                 subject: crsSection.subject,
-                number: crsSection.course,
+                number: bareNumber,
                 section: crsSection.section,
                 crs_class_code: crsSection.classCode,
-                room: crsSection.remarks || null,
                 available_slots: crsSection.availableSlots,
                 total_slots: crsSection.totalSlots,
                 enrichment_matched: true,
@@ -342,7 +364,10 @@ export default function CorrectionPage() {
     setEntries((prev) => {
       const newEntries = prev.filter((e) => rawCourseKey(e.course) !== rawKey);
 
-      const parsedBlocks: CrsParsedBlock[] = parseScheduleText(opt.schedule);
+      const parsedBlocks: CrsParsedBlock[] = parseCrsScheduleBlocks(
+        opt.scheduleBlocksJson,
+        opt.schedule
+      );
       const needsReview = parsedBlocks.length === 0;
       const rowsToInsert = needsReview
         ? cand.entry.dayRows.map((r: { day: string; start: string; end: string; startMinutes: number; endMinutes: number }) => ({
@@ -351,29 +376,30 @@ export default function CorrectionPage() {
             end: r.end,
             start_minutes: r.startMinutes,
             end_minutes: r.endMinutes,
+            room: null as string | null,
           }))
         : expandParsedBlocks(parsedBlocks).map((row) => ({
             day: row.day,
-            start: formatMinutesAsHHMM(row.startMinutes),
-            end: formatMinutesAsHHMM(row.endMinutes),
+            start: formatMinutesAsDisplay(row.startMinutes),
+            end: formatMinutesAsDisplay(row.endMinutes),
             start_minutes: row.startMinutes,
             end_minutes: row.endMinutes,
+            room: row.room ?? null,
           }));
 
+      // `opt` is a CrsSection (see types.ts): `.course` already includes
+      // the subject ("Math 23", not "23" — see extractCrsCourseNumber's
+      // doc comment), so re-split it the same way handleEnrich's
+      // auto-match path does rather than duplicating the subject.
+      const bareNumber = extractCrsCourseNumber(opt.course);
       for (const row of rowsToInsert) {
         newEntries.push({
           ...row,
-          course: `${opt.subject} ${opt.course}`,
+          course: `${opt.subject} ${bareNumber}`,
           subject: opt.subject,
-          number: opt.course,
+          number: bareNumber,
           section: opt.section,
           crs_class_code: opt.classCode,
-          // `opt` is a CrsSection (see types.ts) — it has no `.room` field,
-          // only `.remarks`. `opt.room` was always undefined here, so a
-          // manually-confirmed candidate never got a room even though
-          // handleEnrich's auto-match path (which reads crsSection.remarks)
-          // did. Match that convention here too.
-          room: opt.remarks || null,
           available_slots: opt.availableSlots,
           total_slots: opt.totalSlots,
           enrichment_matched: true,
@@ -665,6 +691,7 @@ export default function CorrectionPage() {
                               // expected to be the flat CrsSection, so pass
                               // `scored.section` there too.
                               const opt = scored.section;
+                              const optRooms = summarizeRooms(opt);
                               return (
                                 <button
                                   key={opt.classCode}
@@ -684,9 +711,9 @@ export default function CorrectionPage() {
                                   </div>
                                   <div className="mt-1 text-xs text-[#52605C]">
                                     <span className="font-semibold">Instructor:</span> {opt.instructor || "TBA"}
-                                    {opt.room && (
+                                    {optRooms && (
                                       <>
-                                        {" "}· <span className="font-semibold">Room:</span> {opt.room}
+                                        {" "}· <span className="font-semibold">Room:</span> {optRooms}
                                       </>
                                     )}
                                   </div>

@@ -62,14 +62,14 @@
 
 import type { ScheduleEntry } from "../client-ocr/types";
 
-// NOTE: this file must stay free of any import from "./client" (or
+// NOTE: this file must stay free of any import from "./turso" (or
 // anything that transitively imports it). It's imported directly by
 // app/schedule/correction/page.tsx, a "use client" component — pulling in
-// ./client would bundle CRS-Monitor's server-only networking code (and its
-// module-scope `process.env.CRS_MONITOR_API_URL` check) into the browser,
-// which throws at import time and crashes the whole page before it can
-// render anything. Server-only matching logic that does need ./client
-// lives in ./matchServer instead.
+// ./turso would bundle CRS-Monitor's server-only libsql client (and its
+// lazy CRS_MONITOR_TURSO_URL/CRS_MONITOR_TURSO_AUTH_TOKEN check) into the
+// browser, which throws at import time and crashes the whole page before
+// it can render anything. Server-only matching logic that does need
+// ./turso lives in ./matchServer instead.
 
 // ===========================================================================
 // 1. Re-splitting raw OCR text with CRS's own boundary rule
@@ -135,8 +135,28 @@ export function normalizeSubject(s: string): string {
   return s.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-// normalizeSection() and extractCrsCourseNumber() moved to ./matchServer —
-// they're only used by the CRS-matching code that lives there now.
+// normalizeSection() stays in ./matchServer — it's only used by the
+// CRS-matching/scoring code that lives there now.
+
+/**
+ * Pulls the number token(s) out of a CRS `course` string (e.g.
+ * "Art Stud 299" -> "299", "CWTS 1 and 2" -> "1 and 2"). CRS-Monitor's
+ * `course` column already includes the subject (confirmed real schema:
+ * "Math 23", not just "23" — see the file header's splitClassName note),
+ * so this re-splits it with the same boundary rule reSplitRawCourseText()
+ * uses, rather than assuming `course` is already bare.
+ *
+ * Lives here (not ./matchServer) despite being CRS-specific: it's pure
+ * text parsing with no dependency on ./turso, and correction/page.tsx (a
+ * "use client" component, which cannot import ./matchServer — see that
+ * file's own import-boundary comment) needs it too, to fix the
+ * "Math Math 23" duplicate-subject bug in its CRS-section-to-entry
+ * mapping. ./matchServer re-exports/reuses this exact function for its
+ * own course-number filtering rather than keeping a separate copy.
+ */
+export function extractCrsCourseNumber(crsCourse: string): string {
+  return reSplitRawCourseText(crsCourse).number;
+}
 
 // ===========================================================================
 // 2. Grouping OCR's per-day-row entries into one class
@@ -208,12 +228,22 @@ export interface CrsParsedBlock {
   days: string[]; // e.g. ["T", "Th"]
   startMinutes: number;
   endMinutes: number;
+  // Optional: only set by parseCrsScheduleBlocks() below (paired from the
+  // `schedule` free-text column — see extractRoomsFromSchedule). Blocks
+  // produced by parseScheduleText() never set this; that function only
+  // has day/time signal, used for match-confidence scoring, where room
+  // isn't relevant.
+  room?: string | null;
 }
 
-/** Formats minutes-since-midnight as a zero-padded 24h "HHMM" string, the
- *  same shape callers' own timeToMinutes() parses back (see correction
- *  page). Used to turn parseScheduleText()'s numeric blocks into the
- *  display strings the schedule UI/DB expect. */
+/** Formats minutes-since-midnight as a zero-padded 24h "HHMM" string.
+ *  NOTE: despite the name's echo of timeToMinutes() (lib/client-ocr/
+ *  textCleanup.ts), the two do NOT round-trip — timeToMinutes() only
+ *  parses "H:MM(AM|PM)" and returns 0 for a bare "HHMM" string like this
+ *  produces. Do not use this for anything that reaches the UI or gets
+ *  saved as start_display/end_display; use textCleanup.ts's
+ *  formatMinutesAsDisplay() for that (see its doc comment for why).
+ *  Kept only in case something still needs the raw 24h shape. */
 export function formatMinutesAsHHMM(totalMinutes: number): string {
   const h = Math.floor(totalMinutes / 60) % 24;
   const m = totalMinutes % 60;
@@ -289,7 +319,7 @@ function parseTimeRange(token: string): { startMinutes: number; endMinutes: numb
   return { startMinutes, endMinutes };
 }
 
-export function parseScheduleText(scheduleText: string): CrsParsedBlock[] {
+export function parseScheduleText(scheduleText: string | null | undefined): CrsParsedBlock[] {
   if (!scheduleText) return [];
   const segments = scheduleText.split(";").map((s) => s.trim()).filter(Boolean);
   const blocks: CrsParsedBlock[] = [];
@@ -346,6 +376,9 @@ export interface ExpandedDayRow {
   day: string; // full name, e.g. "Tue" — matches schedule_entries.day
   startMinutes: number;
   endMinutes: number;
+  // Carried through from the source CrsParsedBlock's `room` (see above) —
+  // both day-rows expanded from the same lec/lab block share its room.
+  room?: string | null;
 }
 
 /**
@@ -361,10 +394,152 @@ export function expandParsedBlocks(blocks: CrsParsedBlock[]): ExpandedDayRow[] {
     for (const code of block.days) {
       const day = CRS_CODE_TO_OCR_DAY[code];
       if (!day) continue; // unrecognized code — skip rather than store garbage
-      rows.push({ day, startMinutes: block.startMinutes, endMinutes: block.endMinutes });
+      rows.push({
+        day,
+        startMinutes: block.startMinutes,
+        endMinutes: block.endMinutes,
+        room: block.room ?? null,
+      });
     }
   }
   return rows;
+}
+
+// ===========================================================================
+// 3.5. Pairing room (from `schedule` free text) with CRS's structured
+//    `scheduleBlocksJson`, and parsing the latter into CrsParsedBlock[].
+//
+//    scheduleBlocksJson has no room field of its own (see types.ts) — room
+//    only ever lives inside `schedule`'s free text, one value per
+//    "; "-split segment, in the same left-to-right order as
+//    scheduleBlocksJson's array. Confirmed real example:
+//      schedule = "Th 7-8AM lec TBA; WF 7-8:30AM lec MB 301"
+//      scheduleBlocksJson = [{"days":["Th"],...}, {"days":["W","F"],...}]
+//      -> segment 0 "Th 7-8AM lec TBA"     -> block 0 -> room "TBA"
+//      -> segment 1 "WF 7-8:30AM lec MB 301" -> block 1 -> room "MB 301"
+// ===========================================================================
+
+/**
+ * Session-type keywords that can appear between a segment's time range and
+ * its room (e.g. "Th 7-8AM lec TBA"). Confirmed against real data: "lec".
+ * "lab" is included on the strength of lec+lab sections being the whole
+ * reason room is per-segment rather than per-class — but neither this list
+ * nor its completeness has been checked against a wider live sample (no
+ * Turso access in this task). If a `schedule` segment's leftover text after
+ * stripping day/time still starts with an unrecognized short keyword
+ * before the actual room, extend this list rather than special-casing it
+ * at a call site.
+ */
+export const SESSION_TYPE_KEYWORDS = ["lec", "lab"];
+
+/** Matches a segment's leading day-token + time-range, e.g. "Th 7-8AM" or
+ *  "WF 7-8:30AM" — the exact prefix shape parseScheduleText()'s own segment
+ *  regex expects (day letters, then one non-space time-range token).
+ *  Reused here rather than re-derived, per the comment on parseScheduleText
+ *  above this section. */
+const DAY_TIME_PREFIX_RE = /^([A-Za-z]+)\s+(\S+)/;
+
+/**
+ * Extracts one room string per "; "-split segment of CRS's free-text
+ * `schedule` column, positionally aligned with scheduleBlocksJson's parsed
+ * array (index i of the result pairs with block i). Strips each segment's
+ * leading day+time prefix (reusing parseScheduleText's segment shape) and
+ * an optional session-type keyword; whatever's left is the room. "TBA" is
+ * a valid room value (arranged/unassigned) and is kept as-is, not
+ * converted to null.
+ *
+ * If schedule's segment count doesn't match `blockCount`, the pairing
+ * can't be trusted — this flags rather than guesses (same "flag rather
+ * than silently guess" pattern as groupOcrEntries' known-limitation note
+ * above): logs a warning and returns `blockCount` nulls.
+ */
+export function extractRoomsFromSchedule(
+  schedule: string | null | undefined,
+  blockCount: number
+): (string | null)[] {
+  if (blockCount === 0) return [];
+  if (!schedule) return Array(blockCount).fill(null);
+
+  const segments = schedule.split("; ").map((s) => s.trim()).filter(Boolean);
+  if (segments.length !== blockCount) {
+    console.warn(
+      `extractRoomsFromSchedule: "${schedule}" has ${segments.length} segment(s) but ` +
+        `scheduleBlocksJson has ${blockCount} block(s) — can't positionally pair room, ` +
+        `treating room as unknown for all blocks.`
+    );
+    return Array(blockCount).fill(null);
+  }
+
+  return segments.map((seg) => {
+    const dayTimeMatch = seg.match(DAY_TIME_PREFIX_RE);
+    if (!dayTimeMatch) return null;
+    let rest = seg.slice(dayTimeMatch[0].length).trim();
+
+    const keywordMatch = rest.match(/^([A-Za-z]+)\b\s*/);
+    if (keywordMatch && SESSION_TYPE_KEYWORDS.includes(keywordMatch[1].toLowerCase())) {
+      rest = rest.slice(keywordMatch[0].length).trim();
+    }
+
+    return rest.length > 0 ? rest : null;
+  });
+}
+
+interface RawScheduleBlockJson {
+  days?: string[];
+  start?: string; // "HH:MM", 24h
+  end?: string; // "HH:MM", 24h
+}
+
+/** Parses a "HH:MM" 24h string into minutes-since-midnight, or null if it
+ *  doesn't match that shape. */
+function hhmmStringToMinutes(hhmm: string): number | null {
+  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const mins = parseInt(m[2], 10);
+  if (Number.isNaN(h) || Number.isNaN(mins)) return null;
+  return h * 60 + mins;
+}
+
+/**
+ * Parses CrsSection.scheduleBlocksJson (structured, one entry per meeting
+ * segment) into CrsParsedBlock[], with each block's `room` filled in by
+ * positionally pairing against `schedule`'s free text (see
+ * extractRoomsFromSchedule). Preferred over parseScheduleText(schedule) for
+ * building rows to actually save: scheduleBlocksJson is CRS-Monitor's own
+ * structured parse (already "HH:MM", one entry per segment reliably)
+ * rather than a client-side re-parse of free text. parseScheduleText is
+ * untouched and still used where it always was — matchServer.ts's
+ * match-confidence scoring — which only needs a rough day/time signal.
+ *
+ * A block whose start/end/days don't parse is dropped (same "skip rather
+ * than store garbage" stance as expandParsedBlocks' unrecognized-day-code
+ * handling above).
+ */
+export function parseCrsScheduleBlocks(
+  scheduleBlocksJson: string,
+  schedule: string | null | undefined
+): CrsParsedBlock[] {
+  let raw: RawScheduleBlockJson[];
+  try {
+    const parsed = JSON.parse(scheduleBlocksJson);
+    raw = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    raw = [];
+  }
+
+  const rooms = extractRoomsFromSchedule(schedule, raw.length);
+
+  const blocks: CrsParsedBlock[] = [];
+  raw.forEach((entry, i) => {
+    const days = Array.isArray(entry.days) ? entry.days : [];
+    const startMinutes = typeof entry.start === "string" ? hhmmStringToMinutes(entry.start) : null;
+    const endMinutes = typeof entry.end === "string" ? hhmmStringToMinutes(entry.end) : null;
+    if (days.length === 0 || startMinutes === null || endMinutes === null) return;
+    blocks.push({ days, startMinutes, endMinutes, room: rooms[i] ?? null });
+  });
+
+  return blocks;
 }
 
 // ===========================================================================

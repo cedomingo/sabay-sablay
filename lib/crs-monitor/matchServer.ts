@@ -1,19 +1,19 @@
 import 'server-only';
 
 // Server-only matching logic: everything here calls out to CRS-Monitor via
-// ./client (which reads process.env.CRS_MONITOR_API_URL lazily per-request
-// and throws a CrsMonitorError — not a module-load-time throw — if it's
-// unset; see client.ts's getApiUrl()). This file must ONLY be imported
-// from server code (API routes, server actions) — never from a
-// "use client" component or anything it imports, or Next.js will bundle
-// ./client's networking code into the browser build unnecessarily.
+// ./turso (which reads CRS_MONITOR_TURSO_URL / CRS_MONITOR_TURSO_AUTH_TOKEN
+// lazily per-query and throws a CrsMonitorError — not a module-load-time
+// throw — if either is unset; see turso.ts's getClient()). This file must
+// ONLY be imported from server code (API routes, server actions) — never
+// from a "use client" component or anything it imports, or Next.js will
+// bundle ./turso's libsql client into the browser build unnecessarily.
 //
 // Pure/parsing helpers that correction/page.tsx needs (parseScheduleText,
 // formatMinutesAsHHMM, groupOcrEntries, etc.) stay in ./matcher, which has
-// no dependency on ./client and is safe to import client-side.
+// no dependency on ./turso and is safe to import client-side.
 
 import type { CrsSection } from "./types";
-import { getAllSectionsForSubject, getSubjects } from "./client";
+import { getAllSectionsForSubject, getSubjects } from "./turso";
 import type { ScheduleEntry } from "../client-ocr/types";
 import {
   normalizeSubject,
@@ -23,7 +23,7 @@ import {
   type OcrGroupedClass,
   type OcrDayRow,
   type CrsParsedBlock,
-  reSplitRawCourseText,
+  extractCrsCourseNumber,
 } from "./matcher";
 
 const MIN_SECTION_SIGNAL_FOR_AUTO_MATCH = 10;
@@ -31,13 +31,6 @@ const SCHEDULE_TIME_TOLERANCE_MINUTES = 10;
 
 function normalizeSection(s: string): string {
   return s.replace(/[\s-]+/g, "").trim().toUpperCase();
-}
-
-/** Pulls the number token(s) out of a CRS `course` string (e.g.
- *  "Art Stud 299" -> "299", "CWTS 1 and 2" -> "1 and 2") using the same
- *  boundary rule, so it can be compared against our re-split OCR number. */
-function extractCrsCourseNumber(crsCourse: string): string {
-  return reSplitRawCourseText(crsCourse).number;
 }
 
 // OCR's ScheduleEntry.day is a full name ("Mon","Tue",...); CRS's day codes
@@ -103,11 +96,11 @@ export type MatchOutcome =
 
 /**
  * Resolves an OCR'd subject string to CRS-Monitor's exact spelling by
- * checking it against the live subject list (GET /api/sections/subjects),
- * normalized for case/whitespace only. The `subjects` filter on
- * GET /api/sections does an exact string match server-side (see
- * client.ts), so we need CRS's exact casing/spelling before querying —
- * not just our own normalized guess.
+ * checking it against the live subject list (distinct `subject` values in
+ * the `sections` table, via ./turso's getSubjects()), normalized for
+ * case/whitespace only. getAllSectionsForSubject()'s subject filter does an
+ * exact string match against the `subject` column, so we need CRS's exact
+ * casing/spelling before querying — not just our own normalized guess.
  */
 export async function resolveCanonicalSubject(
   ocrSubject: string,

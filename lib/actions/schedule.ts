@@ -2,7 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
-import { parseScheduleText, formatMinutesAsHHMM, expandParsedBlocks } from '@/lib/crs-monitor/matcher';
+import { parseCrsScheduleBlocks, expandParsedBlocks } from '@/lib/crs-monitor/matcher';
+import { formatMinutesAsDisplay } from '@/lib/client-ocr/textCleanup';
 
 export interface ScheduleEntryInput {
   day: string;
@@ -188,7 +189,12 @@ export async function saveEnrichedSchedule(
 
   for (const m of matched) {
     const { entry, crsSection, confidence } = m;
-    const blocks = parseScheduleText(crsSection.schedule);
+    // Structured scheduleBlocksJson (paired with room from the `schedule`
+    // free text — see parseCrsScheduleBlocks) rather than re-parsing
+    // `schedule` client-side: same fix as correction/page.tsx's mapping,
+    // applied here for consistency even though this function currently
+    // has no callers (see file's other saveSchedule() for the live path).
+    const blocks = parseCrsScheduleBlocks(crsSection.scheduleBlocksJson, crsSection.schedule);
 
     // Overwrite behavior: delete existing day-rows for this class
     await supabase.from('schedule_entries').delete()
@@ -200,12 +206,12 @@ export async function saveEnrichedSchedule(
     for (const row of expandParsedBlocks(blocks)) {
       await supabase.from('schedule_entries').insert({
         schedule_id: scheduleId, user_id: userId, day: row.day,
-        start_display: formatMinutesAsHHMM(row.startMinutes),
-        end_display: formatMinutesAsHHMM(row.endMinutes),
+        start_display: formatMinutesAsDisplay(row.startMinutes),
+        end_display: formatMinutesAsDisplay(row.endMinutes),
         start_minutes: row.startMinutes, end_minutes: row.endMinutes,
         subject: entry.subject, number: entry.number, section: crsSection.section,
         course_raw: entry.course_raw, crs_class_code: crsSection.classCode,
-        room: crsSection.remarks ?? null, available_slots: crsSection.availableSlots,
+        room: row.room ?? null, available_slots: crsSection.availableSlots,
         total_slots: crsSection.totalSlots, instructor: crsSection.instructor,
         remarks: crsSection.remarks, restrictions: crsSection.restrictions,
         enrichment_matched: true, match_confidence: confidence, raw_ocr_text: entry.rawText ?? null,

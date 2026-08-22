@@ -25,3 +25,20 @@ export function timeToMinutes(t: string): number {
   }
   return h * 60 + mnt;
 }
+
+/** Formats minutes-since-midnight as "H:MMAM/PM" (e.g. 450 -> "7:30AM"),
+ *  the same shape un-enriched OCR rows already display and the only shape
+ *  timeToMinutes() above actually parses back. Use this (not
+ *  matcher.ts's formatMinutesAsHHMM, which produces a bare 24h "HHMM"
+ *  string timeToMinutes() can't read) for any CRS-derived time that
+ *  reaches the UI or gets saved as start_display/end_display. Handles the
+ *  12AM/12PM edge cases (h=0 -> "12:..AM", h=12 -> "12:..PM").
+ *  timeToMinutes(formatMinutesAsDisplay(x)) round-trips for any x. */
+export function formatMinutesAsDisplay(totalMinutes: number): string {
+  const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+  const h = Math.floor(normalized / 60);
+  const m = normalized % 60;
+  const ap = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')}${ap}`;
+}

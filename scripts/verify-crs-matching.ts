@@ -1,36 +1,47 @@
 /**
  * Offline verification harness for the Phase 5 regression checklist.
  *
- * The sandbox this runs in cannot reach https://crs-monitor.onrender.com
- * (network egress is allowlisted and that host isn't on it), so this
- * mocks global.fetch with a small in-memory CRS-Monitor dataset shaped
- * like the real wire format (see lib/crs-monitor/types.ts) and then runs
- * the REAL matching code (matcher.ts + matchServer.ts) against OCR
- * entries shaped exactly like what parseSchedule.ts would produce for
- * the attached sample schedule image, post Phase 1-3 fixes.
+ * The sandbox this runs in cannot reach a real Turso/libSQL database (network
+ * egress is allowlisted and Turso's hosts aren't on it), so this stubs out
+ * @libsql/client's createClient()/execute() with a small in-memory
+ * CRS-Monitor dataset shaped like the real `sections`/`semesters` tables
+ * (see lib/crs-monitor/types.ts) and then runs the REAL matching code
+ * (matcher.ts + matchServer.ts + turso.ts) against OCR entries shaped
+ * exactly like what parseSchedule.ts would produce for the attached sample
+ * schedule image, post Phase 1-3 fixes.
  *
  * This validates the matching/overwrite LOGIC end-to-end. It does not
- * validate that CRS-Monitor's live data actually contains these exact
- * sections/schedules — that part needs a real network call, which must
- * happen from an environment that can reach crs-monitor.onrender.com.
+ * validate that CRS-Monitor's live Turso database actually contains these
+ * exact sections/schedules — that part needs a real query, which must
+ * happen from an environment that can reach it with real
+ * CRS_MONITOR_TURSO_URL / CRS_MONITOR_TURSO_AUTH_TOKEN credentials.
  */
 import Module from 'node:module';
-import type { CrsSection, GetSectionsResponse } from '../lib/crs-monitor/types';
 
-process.env.CRS_MONITOR_API_URL = 'https://crs-monitor.onrender.com';
+process.env.CRS_MONITOR_TURSO_URL = 'libsql://fake-crs-monitor.turso.io';
+process.env.CRS_MONITOR_TURSO_AUTH_TOKEN = 'fake-token-for-offline-harness';
 
 // `server-only` is the real npm package (see package.json) that Next.js
 // aliases to an empty module during its own webpack/RSC build — that's
-// what makes `import 'server-only'` in matchServer.ts safe there. Run
-// outside Next's build (as this standalone script does, via tsx) it does
-// exactly what it's designed to do: throw, since its whole point is
+// what makes `import 'server-only'` in matchServer.ts/turso.ts safe there.
+// Run outside Next's build (as this standalone script does, via tsx) it
+// does exactly what it's designed to do: throw, since its whole point is
 // catching an accidental client-bundle import. Stub it the same way
 // Next's build does, for this offline test harness only — this is not a
 // workaround for an app bug, it's how the package is meant to be used
 // outside Next's own resolver.
+//
+// @libsql/client is stubbed alongside it for the same "run outside the
+// real deployment environment" reason: this harness has no real Turso
+// database to query, so createClient() is replaced with an in-memory
+// stand-in whose execute() answers the exact query shapes turso.ts issues
+// (see FAKE_EXECUTE below) rather than making a network call.
 const originalLoad = (Module as any)._load;
 (Module as any)._load = function (request: string, ...args: unknown[]) {
   if (request === 'server-only') return {};
+  if (request === '@libsql/client') {
+    return { createClient: () => ({ execute: FAKE_EXECUTE }) };
+  }
   return originalLoad.call(this, request, ...args);
 };
 
@@ -39,7 +50,7 @@ const originalLoad = (Module as any)._load;
 //    course so the scorer actually has to disambiguate on section +
 //    schedule signal, not just subject+number).
 // ---------------------------------------------------------------------
-// IMPORTANT: CRS-Monitor's real `course` field is NOT the bare course
+// IMPORTANT: CRS-Monitor's real `course` column is NOT the bare course
 // number. Per the live scraper (server/scraper/parser.js splitClassName,
 // confirmed by cloning github.com/cedomingo/CRS-Monitor directly), a
 // "Class" cell like "Art Stud 299 TDEF" is split into
@@ -49,84 +60,194 @@ const originalLoad = (Module as any)._load;
 // bare number back out. The mock data below deliberately mirrors that
 // real shape (not a naive "course: '23'") so this harness actually
 // exercises that re-split path instead of masking it.
-function section(overrides: Partial<CrsSection>): CrsSection {
+interface FakeSectionRow {
+  id: number;
+  semester_code: string;
+  class_code: string;
+  subject: string;
+  course: string;
+  section: string;
+  credits: string | null;
+  schedule: string | null;
+  instructor: string | null;
+  mode: string | null;
+  remarks: string | null;
+  available_slots: number | null;
+  total_slots: number | null;
+  demand: string | null;
+  restrictions: string | null;
+  blocks_json: string | null;
+  letter: string | null;
+  first_detected: string;
+  last_seen: string;
+  title: string | null;
+  schedule_blocks_json: string;
+}
+
+let nextId = 1;
+const SEMESTER = 'AY2025-2026-1';
+
+function section(overrides: Partial<FakeSectionRow>): FakeSectionRow {
   return {
-    id: Math.floor(Math.random() * 100000),
-    classCode: '00000',
+    id: nextId++,
+    semester_code: SEMESTER,
+    class_code: '00000',
     subject: 'Math',
     course: 'Math 23',
     section: 'AAA',
-    title: 'Sample Course',
-    credits: 3,
+    credits: '3',
     schedule: '',
     instructor: null,
     mode: null,
     remarks: null,
-    availableSlots: 10,
-    totalSlots: 40,
+    available_slots: 10,
+    total_slots: 40,
     demand: null,
     restrictions: null,
-    firstDetected: '2026-01-01',
-    lastSeen: '2026-01-01',
+    blocks_json: null,
+    letter: null,
+    first_detected: '2026-01-01',
+    last_seen: '2026-01-01',
+    title: 'Sample Course',
+    schedule_blocks_json: '[]',
     ...overrides,
   };
 }
 
 const FAKE_SUBJECTS = ['Math', 'CS', 'Physics', 'STS', 'CWTS'];
 
-const FAKE_SECTIONS: CrsSection[] = [
-  // Math 23 — three sections, only WFR-HR-4 matches the OCR'd schedule
-  section({ classCode: '10001', subject: 'Math', course: 'Math 23', section: 'WFR-HR-4', schedule: 'WF 8:30-10AM Rm101', remarks: 'Rm101' }),
-  section({ classCode: '10002', subject: 'Math', course: 'Math 23', section: 'THQ-HR-2', schedule: 'Th 1-2:30PM Rm102', remarks: 'Rm102' }),
-  section({ classCode: '10003', subject: 'Math', course: 'Math 23', section: 'MWF-HR-9', schedule: 'MWF 9-10AM Rm103', remarks: 'Rm103' }),
+// remarks is prereq/co-req text (see types.ts) — NOT room, per the
+// corrected schema. Room now lives only in `schedule`'s free text
+// (see FAKE_SECTIONS below), positionally paired with schedule_blocks_json
+// by extractRoomsFromSchedule()/parseCrsScheduleBlocks() in matcher.ts.
+const FAKE_SECTIONS: FakeSectionRow[] = [
+  // Math 23 WFR-HR-4 — deliberately a real 2-segment lec+lab section (the
+  // OCR entries below have this class meeting WF at one time AND Th at a
+  // DIFFERENT time, which is exactly the shape a 2-block schedule
+  // produces), so the room-pairing / multi-segment path actually gets
+  // exercised end-to-end through the real matcher, not just in isolation.
+  // Segment 0 ("lec", room "Rm101") pairs with block 0 (W,F); segment 1
+  // ("lab", room "Rm101-L") pairs with block 1 (Th).
+  section({
+    class_code: '10001', subject: 'Math', course: 'Math 23', section: 'WFR-HR-4',
+    schedule: 'WF 8:30-10AM lec Rm101; Th 9-10AM lab Rm101-L',
+    schedule_blocks_json: JSON.stringify([
+      { days: ['W', 'F'], start: '08:30', end: '10:00' },
+      { days: ['Th'], start: '09:00', end: '10:00' },
+    ]),
+  }),
+  section({
+    class_code: '10002', subject: 'Math', course: 'Math 23', section: 'THQ-HR-2',
+    schedule: 'Th 1-2:30PM Rm102',
+    schedule_blocks_json: JSON.stringify([{ days: ['Th'], start: '13:00', end: '14:30' }]),
+  }),
+  section({
+    class_code: '10003', subject: 'Math', course: 'Math 23', section: 'MWF-HR-9',
+    schedule: 'MWF 9-10AM Rm103',
+    schedule_blocks_json: JSON.stringify([{ days: ['M', 'W', 'F'], start: '09:00', end: '10:00' }]),
+  }),
 
   // CS 31 — only one section
-  section({ classCode: '20001', subject: 'CS', course: 'CS 31', section: 'WFU', schedule: 'WF 10-11:30AM Rm201', remarks: 'Rm201' }),
+  section({
+    class_code: '20001', subject: 'CS', course: 'CS 31', section: 'WFU',
+    schedule: 'WF 10-11:30AM Rm201',
+    schedule_blocks_json: JSON.stringify([{ days: ['W', 'F'], start: '10:00', end: '11:30' }]),
+  }),
 
   // Physics 72
-  section({ classCode: '30001', subject: 'Physics', course: 'Physics 72', section: 'WFV-HV-4', schedule: 'WF 11:30-1PM Rm301', remarks: 'Rm301' }),
-  section({ classCode: '30002', subject: 'Physics', course: 'Physics 72', section: 'TTH-LAB-2', schedule: 'TTh 1-2:30PM Rm302', remarks: 'Rm302' }),
+  section({
+    class_code: '30001', subject: 'Physics', course: 'Physics 72', section: 'WFV-HV-4',
+    schedule: 'WF 11:30-1PM Rm301',
+    schedule_blocks_json: JSON.stringify([{ days: ['W', 'F'], start: '11:30', end: '13:00' }]),
+    remarks: 'Prerequisite: Physics 71',
+  }),
+  section({
+    class_code: '30002', subject: 'Physics', course: 'Physics 72', section: 'TTH-LAB-2',
+    schedule: 'TTh 1-2:30PM Rm302',
+    schedule_blocks_json: JSON.stringify([{ days: ['T', 'Th'], start: '13:00', end: '14:30' }]),
+    remarks: 'Prerequisite: Physics 71',
+  }),
 
   // STS 1 — only one section
-  section({ classCode: '40001', subject: 'STS', course: 'STS 1', section: 'WFW', schedule: 'WF 1-2:30PM Rm401', remarks: 'Rm401' }),
+  section({
+    class_code: '40001', subject: 'STS', course: 'STS 1', section: 'WFW',
+    schedule: 'WF 1-2:30PM Rm401',
+    schedule_blocks_json: JSON.stringify([{ days: ['W', 'F'], start: '13:00', end: '14:30' }]),
+  }),
 
-  // CS 20 — two sections, one whose schedule string doesn't parse (TBA)
-  section({ classCode: '50001', subject: 'CS', course: 'CS 20', section: 'THAB', schedule: 'TTh 7:30-8:30AM Rm501', remarks: 'Rm501' }),
-  section({ classCode: '50002', subject: 'CS', course: 'CS 20', section: 'THAB/HWX', schedule: 'Arranged', remarks: 'TBA' }),
+  // CS 20 — two sections, one whose schedule string is "Arranged"/TBA and
+  // deliberately doesn't parse into any blocks (schedule_blocks_json stays
+  // '[]', the section() default) — exercises the needs-review fallback.
+  section({
+    class_code: '50001', subject: 'CS', course: 'CS 20', section: 'THAB',
+    schedule: 'TTh 7:30-8:30AM Rm501',
+    schedule_blocks_json: JSON.stringify([{ days: ['T', 'Th'], start: '07:30', end: '08:30' }]),
+  }),
+  section({
+    class_code: '50002', subject: 'CS', course: 'CS 20', section: 'THAB/HWX',
+    schedule: 'Arranged',
+    schedule_blocks_json: '[]',
+  }),
 
-  // CWTS 1 — one section
-  section({ classCode: '60001', subject: 'CWTS', course: 'CWTS 1', section: 'ENGGDCS', schedule: 'M 7-10AM Rm601', remarks: 'Rm601' }),
+  // CWTS 1 — one section; combined course number ("CWTS 1 and 2") is
+  // exercised separately below via reSplitRawCourseText/extractCrsCourseNumber
+  // directly, since none of the OCR fixture rows below are for it.
+  section({
+    class_code: '60001', subject: 'CWTS', course: 'CWTS 1', section: 'ENGGDCS',
+    schedule: 'M 7-10AM Rm601',
+    schedule_blocks_json: JSON.stringify([{ days: ['M'], start: '07:00', end: '10:00' }]),
+  }),
 ];
 
-(global as any).fetch = async (url: string) => {
-  const u = new URL(url);
-  if (u.pathname === '/api/sections/subjects') {
+const FAKE_SEMESTERS = [{ semester_code: SEMESTER, is_active: 1 }];
+
+// Answers the query shapes turso.ts issues (getSubjects, getAllSectionsForSubject,
+// and the active-semester lookup) — no other SQL is expected from this
+// harness's code path, so anything else is a signal the real module
+// changed shape and this stub needs updating.
+async function FAKE_EXECUTE(stmt: string | { sql: string; args?: unknown[] }) {
+  const sql = typeof stmt === 'string' ? stmt : stmt.sql;
+  const args = typeof stmt === 'string' ? [] : (stmt.args ?? []);
+
+  if (sql.includes('FROM semesters')) {
+    return { rows: FAKE_SEMESTERS.filter((s) => s.is_active === 1) };
+  }
+
+  if (sql.includes('GROUP BY subject')) {
+    const semesterCode = args[0] as string;
+    const bySubject = new Map<string, number>();
+    for (const s of FAKE_SECTIONS) {
+      if (s.semester_code !== semesterCode) continue;
+      bySubject.set(s.subject, (bySubject.get(s.subject) ?? 0) + 1);
+    }
     return {
-      ok: true,
-      status: 200,
-      json: async () => ({ subjects: FAKE_SUBJECTS.map((s) => ({ subject: s, count: 1 })) }),
-    } as any;
-  }
-  if (u.pathname === '/api/sections') {
-    const subject = u.searchParams.get('subject');
-    const filtered = FAKE_SECTIONS.filter((s) => s.subject === subject);
-    const resp: GetSectionsResponse = {
-      semesterCode: 'AY2025-2026-1',
-      total: filtered.length,
-      count: filtered.length,
-      sections: filtered,
+      rows: Array.from(bySubject.entries())
+        .filter(([subject]) => FAKE_SUBJECTS.includes(subject))
+        .map(([subject, count]) => ({ subject, count })),
     };
-    return { ok: true, status: 200, json: async () => resp } as any;
   }
-  if (u.pathname === '/api/health') {
-    return { ok: true, status: 200, json: async () => ({ status: 'ok' }) } as any;
+
+  if (sql.includes('FROM sections')) {
+    const [semesterCode, subject] = args as [string, string];
+    return {
+      rows: FAKE_SECTIONS.filter((s) => s.semester_code === semesterCode && s.subject === subject),
+    };
   }
-  throw new Error(`Unmocked URL: ${url}`);
-};
+
+  throw new Error(`Unmocked SQL: ${sql}`);
+}
 
 async function main() {
   const { matchAllOcrEntries } = await import('../lib/crs-monitor/matchServer');
-  const { groupOcrEntries, reSplitRawCourseText } = await import('../lib/crs-monitor/matcher');
+  const {
+    groupOcrEntries,
+    reSplitRawCourseText,
+    extractCrsCourseNumber,
+    extractRoomsFromSchedule,
+    parseCrsScheduleBlocks,
+    expandParsedBlocks,
+  } = await import('../lib/crs-monitor/matcher');
+  const { timeToMinutes, formatMinutesAsDisplay } = await import('../lib/client-ocr/textCleanup');
   type ScheduleEntry = import('../lib/client-ocr/types').ScheduleEntry;
 
   // OCR entries shaped exactly like parseScheduleImage()'s output for the
@@ -171,8 +292,8 @@ async function main() {
   const sectionOk = physicsResplit.section === 'WFV-HV-4';
   console.log(`[3] Section not truncated (reSplitRawCourseText): ${sectionOk ? 'PASS' : 'FAIL'} -> "${physicsResplit.section}"`);
 
-  // 4/5. Run the actual matcher against the mocked CRS-Monitor data
-  const results = await matchAllOcrEntries(entries, 'AY2025-2026-1');
+  // 4/5. Run the actual matcher against the mocked CRS-Monitor Turso data
+  const results = await matchAllOcrEntries(entries, SEMESTER);
   console.log(`\n[4/5] matchAllOcrEntries results (${results.length} grouped classes):\n`);
   for (const r of results) {
     const label = `${r.ocrClass.subject} ${r.ocrClass.number} ${r.ocrClass.section}`.padEnd(28);
@@ -187,6 +308,56 @@ async function main() {
 
   const groups = groupOcrEntries(entries);
   console.log(`\nGrouped ${entries.length} day-rows into ${groups.length} classes (expected 7: CWTS1, CS20-THAB, Math23, CS31, Physics72, STS1, CS20-THAB/HWX).`);
+
+  console.log(`\n=== Phase 2 checklist (room / time / course-number mapping) ===\n`);
+
+  // 6. Room-pairing, exercised through the real matched pipeline: Math 23
+  // WFR-HR-4's fixture is a real 2-segment lec+lab schedule (see
+  // FAKE_SECTIONS) — confirm the matched section's own scheduleBlocksJson
+  // pairs each block with the right room via parseCrsScheduleBlocks, and
+  // that expandParsedBlocks carries `room` through per day-row.
+  const mathMatch = results.find((r) => r.ocrClass.subject === 'Math' && r.outcome.status === 'matched');
+  let math23Ok = false;
+  if (mathMatch && mathMatch.outcome.status === 'matched') {
+    const blocks = parseCrsScheduleBlocks(
+      mathMatch.outcome.section.scheduleBlocksJson,
+      mathMatch.outcome.section.schedule
+    );
+    const rows = expandParsedBlocks(blocks);
+    const byDay = Object.fromEntries(rows.map((r) => [r.day, r.room]));
+    math23Ok = byDay.Wed === 'Rm101' && byDay.Fri === 'Rm101' && byDay.Thu === 'Rm101-L';
+    console.log(`[6] Math 23 WFR-HR-4 lec+lab room pairing: ${math23Ok ? 'PASS' : 'FAIL'} -> ${JSON.stringify(byDay)}`);
+  } else {
+    console.log('[6] Math 23 WFR-HR-4 lec+lab room pairing: FAIL -> no matched Math result to check');
+  }
+
+  // 7. extractRoomsFromSchedule against the exact confirmed real example
+  // from the migration spec (not just the synthetic fixtures above) —
+  // including "TBA" being kept as a valid room, not nulled.
+  const specRooms = extractRoomsFromSchedule('Th 7-8AM lec TBA; WF 7-8:30AM lec MB 301', 2);
+  const specRoomsOk = specRooms[0] === 'TBA' && specRooms[1] === 'MB 301';
+  console.log(`[7] extractRoomsFromSchedule spec example: ${specRoomsOk ? 'PASS' : 'FAIL'} -> ${JSON.stringify(specRooms)}`);
+
+  // 8. Segment/block count mismatch -> flagged as unknown (null), not guessed.
+  const mismatchRooms = extractRoomsFromSchedule('Th 7-8AM lec TBA; WF 7-8:30AM lec MB 301', 3);
+  const mismatchOk = mismatchRooms.length === 3 && mismatchRooms.every((r) => r === null);
+  console.log(`[8] extractRoomsFromSchedule segment/block mismatch -> null (flagged, not guessed): ${mismatchOk ? 'PASS' : 'FAIL'} -> ${JSON.stringify(mismatchRooms)}`);
+
+  // 9. formatMinutesAsDisplay <-> timeToMinutes round-trip, incl. 12AM/12PM edges.
+  const roundTripCases = [0, 30, 60, 450, 690, 720, 750, 780, 1439];
+  const roundTripOk = roundTripCases.every((mins) => timeToMinutes(formatMinutesAsDisplay(mins)) === mins);
+  console.log(
+    `[9] formatMinutesAsDisplay/timeToMinutes round-trip (incl. 12AM/12PM): ${roundTripOk ? 'PASS' : 'FAIL'} -> ` +
+      roundTripCases.map((m) => `${m}->"${formatMinutesAsDisplay(m)}"->${timeToMinutes(formatMinutesAsDisplay(m))}`).join(', ')
+  );
+
+  // 10. extractCrsCourseNumber strips the subject CRS's `course` column
+  // includes ("Math 23" -> "23"), including the combined-number case
+  // ("CWTS 1 and 2" -> "1 and 2") per matcher.ts's own comments.
+  const bareMath = extractCrsCourseNumber('Math 23');
+  const bareCombined = extractCrsCourseNumber('CWTS 1 and 2');
+  const courseNumberOk = bareMath === '23' && bareCombined === '1 and 2';
+  console.log(`[10] extractCrsCourseNumber (incl. combined "and"): ${courseNumberOk ? 'PASS' : 'FAIL'} -> "${bareMath}", "${bareCombined}"`);
 }
 
 main().catch((e) => {
