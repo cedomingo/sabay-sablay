@@ -615,38 +615,52 @@ export default function CorrectionPage() {
                             {cand.entry.subject} {cand.entry.number} (Section {cand.entry.section || "N/A"})
                           </p>
                           <div className="space-y-2">
-                            {cand.candidates.map((opt: any) => (
-                              <button
-                                key={opt.classCode}
-                                onClick={() => handleCandidateConfirm(cand, opt)}
-                                className="w-full rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] p-3 text-left transition-colors hover:border-[#56B9AC] hover:bg-[#E4F1EA]"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="font-semibold text-[#214746]">
-                                    {opt.section} — {opt.title}
-                                  </span>
-                                  <span className="text-xs font-mono text-[#87908A]">
-                                    {opt.classCode}
-                                  </span>
-                                </div>
-                                <div className="mt-1 text-xs text-[#52605C]">
-                                  <span className="font-semibold">Schedule:</span> {opt.schedule}
-                                </div>
-                                <div className="mt-1 text-xs text-[#52605C]">
-                                  <span className="font-semibold">Instructor:</span> {opt.instructor || "TBA"}
-                                  {opt.room && (
-                                    <>
-                                      {" "}· <span className="font-semibold">Room:</span> {opt.room}
-                                    </>
-                                  )}
-                                </div>
-                                {opt.remarks && (
-                                  <div className="mt-1 text-xs italic text-[#87908A]">
-                                    {opt.remarks}
+                            {cand.candidates.map((scored: any) => {
+                              // `scored` is a ScoredCandidate ({ section: CrsSection,
+                              // confidence: number }) as returned by /api/schedule/enrich
+                              // — the actual CrsSection fields (section code, title,
+                              // classCode, schedule, etc.) live on `scored.section`, not
+                              // on `scored` itself. Reading them off `scored` directly
+                              // used to render the nested CrsSection object as a JSX
+                              // child (e.g. `{scored.section}`), which crashed with
+                              // React error #31 ("objects are not valid as a React
+                              // child"). handleCandidateConfirm's second argument is
+                              // expected to be the flat CrsSection, so pass
+                              // `scored.section` there too.
+                              const opt = scored.section;
+                              return (
+                                <button
+                                  key={opt.classCode}
+                                  onClick={() => handleCandidateConfirm(cand, opt)}
+                                  className="w-full rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] p-3 text-left transition-colors hover:border-[#56B9AC] hover:bg-[#E4F1EA]"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-[#214746]">
+                                      {opt.section} — {opt.title}
+                                    </span>
+                                    <span className="text-xs font-mono text-[#87908A]">
+                                      {opt.classCode}
+                                    </span>
                                   </div>
-                                )}
-                              </button>
-                            ))}
+                                  <div className="mt-1 text-xs text-[#52605C]">
+                                    <span className="font-semibold">Schedule:</span> {opt.schedule}
+                                  </div>
+                                  <div className="mt-1 text-xs text-[#52605C]">
+                                    <span className="font-semibold">Instructor:</span> {opt.instructor || "TBA"}
+                                    {opt.room && (
+                                      <>
+                                        {" "}· <span className="font-semibold">Room:</span> {opt.room}
+                                      </>
+                                    )}
+                                  </div>
+                                  {opt.remarks && (
+                                    <div className="mt-1 text-xs italic text-[#87908A]">
+                                      {opt.remarks}
+                                    </div>
+                                  )}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       ))}
