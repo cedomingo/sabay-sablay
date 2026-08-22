@@ -737,7 +737,7 @@ export default function CorrectionPage() {
                                 )}
                                 {entry.needs_review && (
                                   <span
-                                    title="CRS-Monitor matched this class but its schedule text didn't parse — please verify the day/time"
+                                    title="CRS Sections matched this class but its schedule text didn't parse — please verify the day/time"
                                     className="inline-flex items-center rounded-full bg-[#F6D486] px-2 py-0.5 text-[10px] font-semibold text-[#5A4419]"
                                   >
                                     Verify time

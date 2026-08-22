@@ -28,3 +28,6 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# tesseract language data downloaded by local OCR harness runs
+eng.traineddata
