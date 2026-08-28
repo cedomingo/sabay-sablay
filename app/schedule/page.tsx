@@ -4,13 +4,15 @@ import { Upload, MapPin, Users, ListChecks, UserRound } from "lucide-react";
 import { getUpcomingTasks, getAllVisibleTasks } from "@/lib/actions/tasks";
 import { checkDueDateNotifications } from "@/lib/actions/notifications";
 import { getLocationOverridesForEntries } from "@/lib/actions/map";
-import { isTbaPromptable } from "@/lib/map/resolveLocation";
+import { isTbaPromptable, type LocationOverride } from "@/lib/map/resolveLocation";
 import NotificationBell from "@/components/NotificationBell";
 import PrivacyToggle from "@/components/PrivacyToggle";
 import ScheduleTabs from "./ScheduleTabs";
 import TbaLocationPrompt from "./TbaLocationPrompt";
 import CalendarView from "../calendar/CalendarView";
 import AppHeader from "@/components/AppHeader";
+import { SUBJECT_COLORS, buildSubjectColorMap } from "@/lib/map/subjectColors";
+import PersonalMapTab from "./map/PersonalMapTab";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
@@ -27,27 +29,11 @@ function formatHourLabel(minutes: number): string {
   return `${h12}:00 ${period}`;
 }
 
-const COLORS = [
-  { bg: "bg-[#F4A28C]", text: "text-[#512E2B]", border: "border-[#DC7C66]" },
-  { bg: "bg-[#8DDDD0]", text: "text-[#163D3A]", border: "border-[#56B9AC]" },
-  { bg: "bg-[#C9B9E9]", text: "text-[#34264F]", border: "border-[#A991D1]" },
-  { bg: "bg-[#F6D486]", text: "text-[#4C3911]", border: "border-[#DDB35A]" },
-  { bg: "bg-[#D9E7DE]", text: "text-[#286057]", border: "border-[#B9D4C4]" },
-];
-
 function getDayIndex(day: string): number {
   const map: Record<string, number> = {
     Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6,
   };
   return map[day] ?? 0;
-}
-
-function getColorForSubject(subject: string) {
-  let hash = 0;
-  for (let i = 0; i < subject.length; i++) {
-    hash = subject.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return COLORS[Math.abs(hash) % COLORS.length];
 }
 
 // Lays out a single day's entries on a continuous timeline. Entries that
@@ -97,7 +83,7 @@ function layoutDayEntries<T extends { start_minutes: number; end_minutes: number
   return result;
 }
 
-interface ScheduleEntry {
+export interface ScheduleEntry {
   id: string;
   day: string;
   start_display: string;
@@ -127,6 +113,8 @@ interface ScheduleData {
    * overrides, which come from a separate table.
    */
   tbaPromptEntryIds: Set<string>;
+  /** Location overrides for ALL entries — needed by the personal Map tab. */
+  overrides: LocationOverride[];
 }
 
 async function getSchedule(): Promise<ScheduleData | null> {
@@ -156,13 +144,18 @@ async function getSchedule(): Promise<ScheduleData | null> {
 
   const allEntries: ScheduleEntry[] = entries || [];
 
-  // Only entries that could possibly need the prompt are worth checking
-  // overrides for — no point fetching overrides for a "MB 301" entry.
+  // Fetch overrides for ALL non-hidden entries so the Map tab can resolve
+  // every class location, not just TBA-promptable ones.
+  const visibleEntryIds = allEntries
+    .filter((e) => !e.hidden)
+    .map((e) => e.id);
+  const overrides = await getLocationOverridesForEntries(visibleEntryIds);
+  const overrideByEntryId = new Map(overrides.map((o) => [o.scheduleEntryId, o]));
+
+  // Subset of visible entries that are TBA/Arranged and still unresolved.
   const promptableEntryIds = allEntries
     .filter((e) => !e.hidden && isTbaPromptable(e.room))
     .map((e) => e.id);
-  const overrides = await getLocationOverridesForEntries(promptableEntryIds);
-  const overrideByEntryId = new Map(overrides.map((o) => [o.scheduleEntryId, o]));
 
   const tbaPromptEntryIds = new Set(
     promptableEntryIds.filter((id) => {
@@ -178,6 +171,7 @@ async function getSchedule(): Promise<ScheduleData | null> {
     ...schedule,
     entries: allEntries,
     tbaPromptEntryIds,
+    overrides,
   };
 }
 
@@ -244,10 +238,7 @@ export default async function SchedulePage({
 
   // Group entries by subject for color assignment
   const subjects = [...new Set(schedule.entries.map((e) => e.subject))];
-  const subjectColorMap = new Map<string, typeof COLORS[0]>();
-  subjects.forEach((s, i) => {
-    subjectColorMap.set(s, COLORS[i % COLORS.length]);
-  });
+  const subjectColorMap = buildSubjectColorMap(subjects);
 
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
@@ -323,15 +314,14 @@ export default async function SchedulePage({
                   </p>
                 ) : (
                   <div className="divide-y divide-[#E1DFD7]">
-                    {dayEntries.map((entry) => {
-                      const color = subjectColorMap.get(entry.subject) || COLORS[0];
+                    {dayEntries.map((entry) => {                      const color = subjectColorMap.get(entry.subject) || SUBJECT_COLORS[0];
                       return (
                         <div
                           key={entry.id}
                           className={`flex items-center gap-3 px-4 py-3 ${
                             entry.hidden ? "opacity-50" : ""
                           }`}
-                        >
+                          >
                           <span
                             className={`h-9 w-1.5 shrink-0 rounded-full ${color.bg} ${entry.hidden ? "ring-1 ring-dashed ring-[#C77A68]" : ""}`}
                           />
@@ -460,7 +450,7 @@ export default async function SchedulePage({
                         ))}
 
                         {dayEntries.map((entry) => {
-                          const color = subjectColorMap.get(entry.subject) || COLORS[0];
+                          const color = subjectColorMap.get(entry.subject) || SUBJECT_COLORS[0];
                           const top = (entry.start_minutes - HOUR_START) * PIXELS_PER_MINUTE;
                           const height = Math.max(
                             (entry.end_minutes - entry.start_minutes) * PIXELS_PER_MINUTE,
@@ -522,7 +512,7 @@ export default async function SchedulePage({
         {subjects.length > 0 && (
           <div className="mt-6 flex flex-wrap items-center gap-3">
             {subjects.map((subject) => {
-              const color = subjectColorMap.get(subject) || COLORS[0];
+              const color = subjectColorMap.get(subject) || SUBJECT_COLORS[0];
               return (
                 <div key={subject} className="flex items-center gap-2">
                   <span
@@ -628,6 +618,12 @@ export default async function SchedulePage({
           </div>
         )}
             </>
+          }
+          mapTab={
+            <PersonalMapTab
+              entries={schedule.entries}
+              overrides={schedule.overrides}
+            />
           }
         />
       </div>

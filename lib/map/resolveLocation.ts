@@ -114,7 +114,10 @@ export function normalizeRoom(raw: string | null | undefined): NormalizedRoom {
   if (lower in NO_PIN_REASON) {
     return { kind: "no-pin", reason: NO_PIN_REASON[lower] };
   }
-  const code = trimmed.split(/\s+/, 1)[0];
+  // Split on whitespace OR hyphen so that room strings like "AECH-Seminar Rm"
+  // correctly extract "AECH" as the building code. No crs_codes in the dataset
+  // contain hyphens, so this is safe — see up-diliman-places.json.
+  const code = trimmed.split(/[\s-]+/, 1)[0];
   return { kind: "code", code: code.toUpperCase() };
 }
 
@@ -248,4 +251,63 @@ export function resolveLocation(params: {
   }
 
   return { state: "building-unresolved", rawRoom: activeEntry.room ?? "" };
+}
+
+// ===========================================================================
+// Time-independent entry resolver (for the personal Map tab)
+// ===========================================================================
+
+/**
+ * Resolves a single schedule entry's location without a time gate. Unlike
+ * resolveLocation (which answers "where is this person right now?" for the
+ * group Map tab), this answers "where does this entry take place?" regardless
+ * of the current time — used by the personal Map tab to plot every class on
+ * the user's schedule.
+ *
+ * The resolution logic is identical to the override→normalize→crs-code path
+ * in resolveLocation, just applied to a single entry rather than the
+ * currently-active one.
+ */
+export function resolveEntryLocation(params: {
+  entry: ScheduleEntryLike;
+  places: Place[];
+  overrides: LocationOverride[];
+}): LocationResult {
+  const { entry, places, overrides } = params;
+
+  const override = overrides.find((o) => o.scheduleEntryId === entry.id);
+
+  if (override) {
+    if (override.isAsync) {
+      return { state: "off-campus" };
+    }
+    if (override.placeName) {
+      const place = places.find((p) => p.name === override.placeName);
+      if (place) {
+        return { state: "in-class", place, source: "override" };
+      }
+      return { state: "building-unresolved", rawRoom: entry.room ?? "" };
+    }
+    if (override.customLat != null && override.customLng != null) {
+      return {
+        state: "in-class-custom-pin",
+        label: override.customLabel ?? "Custom location",
+        lat: override.customLat,
+        lng: override.customLng,
+      };
+    }
+  }
+
+  const normalized = normalizeRoom(entry.room);
+
+  if (normalized.kind === "no-pin") {
+    return { state: "off-campus" };
+  }
+
+  const place = places.find((p) => p.crs_codes?.includes(normalized.code));
+  if (place) {
+    return { state: "in-class", place, source: "crs-code" };
+  }
+
+  return { state: "building-unresolved", rawRoom: entry.room ?? "" };
 }

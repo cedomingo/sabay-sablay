@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Trash2, Plus, AlertCircle } from "lucide-react";
 import { saveSchedule } from "@/lib/actions/schedule";
@@ -207,6 +207,25 @@ export default function CorrectionPage() {
 
   const entryGroups = useMemo(() => groupEntriesByClass(entries), [entries]);
 
+  // Guards the auto-enrich call below against firing more than once.
+  //
+  // In dev, reactStrictMode (next.config.js) intentionally mounts this
+  // component twice (mount -> cleanup -> mount) to surface effects that
+  // aren't idempotent. Without this guard, the effect below ran
+  // handleEnrich(withEnrichment) on both mounts with the *same* captured
+  // snapshot. handleEnrich's dedup/removal step matches existing rows by
+  // rawCourseKey(entry.rawText) against rawCourseKey(e.course) - but a
+  // successful match rewrites e.course to CRS's canonical
+  // "${subject} ${number}" form (see handleEnrich), which generally does
+  // NOT equal the original raw OCR text the second call's rawText is still
+  // derived from. So the second call's removal step found nothing to
+  // delete and just appended a second, duplicate set of matched rows on
+  // top of the first - every enriched section showed up twice.
+  //
+  // A ref (not state) is required here: it must persist across the
+  // Strict Mode remount without itself triggering a re-render/re-run.
+  const hasAutoEnriched = useRef(false);
+
   useEffect(() => {
     const raw = sessionStorage.getItem("parsedSchedule");
     if (!raw) {
@@ -236,10 +255,15 @@ export default function CorrectionPage() {
       // manually. The comment in handleSave() ("we no longer call
       // handleEnrich() here to prevent race conditions") is about not
       // re-triggering enrichment on every save; that reasoning doesn't
-      // apply here since this fires exactly once, on mount, before any
-      // save is possible. The manual button still works afterward (e.g.
-      // after the user edits a row and wants to re-check it).
-      if (withEnrichment.length > 0) {
+      // apply here. Note this effect can still run more than once (e.g.
+      // React Strict Mode's dev-only double-mount), which is why
+      // hasAutoEnriched guards the call below — see its comment for why a
+      // second call with a stale snapshot silently duplicated every
+      // matched row instead of erroring. The manual button still works
+      // afterward (e.g. after the user edits a row and wants to
+      // re-check it).
+      if (withEnrichment.length > 0 && !hasAutoEnriched.current) {
+        hasAutoEnriched.current = true;
         void handleEnrich(withEnrichment);
       }
     } catch {

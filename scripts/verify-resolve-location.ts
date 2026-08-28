@@ -9,6 +9,7 @@
  */
 import {
   resolveLocation,
+  resolveEntryLocation,
   normalizeRoom,
   isTbaPromptable,
   getManilaDayAndMinutes,
@@ -20,6 +21,8 @@ import type { Place } from "../lib/map/data/types";
 const PLACES: Place[] = [
   { name: "Institute of Mathematics (IM)", lat: 14.6485, lng: 121.0715, category: "academic", crs_codes: ["MB"] },
   { name: "Alonso Hall", lat: 14.6522, lng: 121.0731, category: "academic", crs_codes: ["ALON", "CHE", "HRIM", "HRIML", "IDS"] },
+  { name: "UP Alumni Engineers Centennial Hall", lat: 14.6487, lng: 121.0686, category: "academic", crs_codes: ["AECH"] },
+  { name: "DMMME Building", lat: 14.6479, lng: 121.0680, category: "academic", crs_codes: ["DMMME", "FLUOR", "MMM", "OSTREA"] },
 ];
 
 // A UTC instant that is Friday 08:30 in Asia/Manila (UTC+8).
@@ -249,6 +252,127 @@ function run() {
         r3.kind === "no-pin" &&
         r3.reason === "online",
       { r1, r2, r3 }
+    );
+  }
+
+  // 14. Hyphenated room string: "AECH-Seminar Rm" should extract "AECH" code.
+  {
+    const r = normalizeRoom("AECH-Seminar Rm");
+    check(
+      "14: normalizeRoom extracts AECH from AECH-Seminar Rm",
+      r.kind === "code" && r.code === "AECH",
+      r
+    );
+  }
+
+  // 15. AECH-Seminar Rm resolves to UP Alumni Engineers Centennial Hall.
+  {
+    const r = resolveLocation({
+      entries: [entry({ room: "AECH-Seminar Rm" })],
+      now: FRIDAY_0830_MANILA,
+      places: PLACES,
+      overrides: [],
+    });
+    check(
+      "15: AECH-Seminar Rm resolves to AECH building",
+      r.state === "in-class" && r.source === "crs-code" && r.place.name === "UP Alumni Engineers Centennial Hall",
+      r
+    );
+  }
+
+  // 16. Legitimate hyphenated room suffix: "GUSALI 2-E" should extract "GUSALI" (space before hyphen).
+  {
+    const r = normalizeRoom("GUSALI 2-E");
+    check(
+      "16: GUSALI 2-E extracts code GUSALI",
+      r.kind === "code" && r.code === "GUSALI",
+      r
+    );
+  }
+
+  // 17. DMMME (no hyphen) still resolves correctly.
+  {
+    const r = normalizeRoom("DMMME 201");
+    check(
+      "17: DMMME 201 extracts code DMMME",
+      r.kind === "code" && r.code === "DMMME",
+      r
+    );
+  }
+
+  // 18. resolveEntryLocation — time-independent resolver.
+  {
+    const r = resolveEntryLocation({
+      entry: entry({ room: "AECH-Seminar Rm" }),
+      places: PLACES,
+      overrides: [],
+    });
+    check(
+      "18: resolveEntryLocation resolves AECH-Seminar Rm",
+      r.state === "in-class" && r.source === "crs-code" && r.place.name === "UP Alumni Engineers Centennial Hall",
+      r
+    );
+  }
+
+  // 19. resolveEntryLocation with override.
+  {
+    const overrides: LocationOverride[] = [
+      { scheduleEntryId: "e1", placeName: "Alonso Hall", customLat: null, customLng: null, customLabel: null, isAsync: false },
+    ];
+    const r = resolveEntryLocation({
+      entry: entry({ room: "TBA" }),
+      places: PLACES,
+      overrides,
+    });
+    check(
+      "19: resolveEntryLocation respects override",
+      r.state === "in-class" && r.source === "override" && r.place.name === "Alonso Hall",
+      r
+    );
+  }
+
+  // 20. resolveEntryLocation — async override → off-campus.
+  {
+    const overrides: LocationOverride[] = [
+      { scheduleEntryId: "e1", placeName: null, customLat: null, customLng: null, customLabel: null, isAsync: true },
+    ];
+    const r = resolveEntryLocation({
+      entry: entry({ room: "MB 301" }),
+      places: PLACES,
+      overrides,
+    });
+    check(
+      "20: resolveEntryLocation async override -> off-campus",
+      r.state === "off-campus",
+      r
+    );
+  }
+
+  // 21. resolveEntryLocation — TBA no override → off-campus.
+  {
+    const r = resolveEntryLocation({
+      entry: entry({ room: "TBA" }),
+      places: PLACES,
+      overrides: [],
+    });
+    check(
+      "21: resolveEntryLocation TBA no override -> off-campus",
+      r.state === "off-campus",
+      r
+    );
+  }
+
+  // 22. resolveEntryLocation — unknown building → building-unresolved.
+  {
+    const r = resolveEntryLocation({
+      entry: entry({ room: "ZZZ 404" }),
+      places: PLACES,
+      overrides: [],
+    });
+    check(
+      "22: resolveEntryLocation unknown building -> building-unresolved",
+      r.state === "building-unresolved",
+      r
     );
   }
 

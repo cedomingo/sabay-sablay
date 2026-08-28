@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CalendarRange, CalendarDays } from "lucide-react";
+import { CalendarRange, CalendarDays, Map as MapIcon } from "lucide-react";
 
 interface ScheduleTabsProps {
   scheduleTab: ReactNode;
   calendarTab: ReactNode;
-  initialTab?: "schedule" | "calendar";
+  mapTab?: ReactNode;
+  initialTab?: "schedule" | "calendar" | "map";
 }
 
 /**
@@ -19,9 +20,10 @@ interface ScheduleTabsProps {
 export default function ScheduleTabs({
   scheduleTab,
   calendarTab,
+  mapTab,
   initialTab = "schedule",
 }: ScheduleTabsProps) {
-  const [tab, setTab] = useState<"schedule" | "calendar">(initialTab);
+  const [tab, setTab] = useState<"schedule" | "calendar" | "map">(initialTab);
 
   return (
     <div>
@@ -50,10 +52,25 @@ export default function ScheduleTabs({
           <CalendarDays size={14} />
           Calendar
         </button>
+        {mapTab && (
+          <button
+            type="button"
+            onClick={() => setTab("map")}
+            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${
+              tab === "map"
+                ? "bg-[#214746] text-[#F4F1E9]"
+                : "text-[#52605C] hover:bg-[#E7EBE5]"
+            }`}
+          >
+            <MapIcon size={14} />
+            Map
+          </button>
+        )}
       </div>
 
       <div className={tab === "schedule" ? "block" : "hidden"}>{scheduleTab}</div>
       <div className={tab === "calendar" ? "block" : "hidden"}>{calendarTab}</div>
+      {mapTab && <div className={tab === "map" ? "block" : "hidden"}>{mapTab}</div>}
     </div>
   );
 }
