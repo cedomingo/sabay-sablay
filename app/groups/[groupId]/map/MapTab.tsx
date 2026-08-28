@@ -139,6 +139,7 @@ export default function MapTab({ members, entries, overrides, currentUserId }: P
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
   const markersRef = useRef<import("leaflet").Marker[]>([]);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [leafletReady, setLeafletReady] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -249,10 +250,30 @@ export default function MapTab({ members, entries, overrides, currentUserId }: P
 
       mapRef.current = map;
       setLeafletReady(true);
+
+      // Leaflet caches its container's pixel size at the instant L.map()
+      // runs. If the grid/flex layout (or Tailwind's CSS) hasn't finished
+      // settling yet — which is common in dev under React Strict Mode's
+      // double-effect — that cached size can be wrong, producing exactly
+      // one tile in a corner with the rest of the box blank. A
+      // ResizeObserver keeps the map's internal size in sync with the
+      // container's real size going forward.
+      const containerEl = mapContainerRef.current;
+      const resizeObserver = new ResizeObserver(() => {
+        mapRef.current?.invalidateSize();
+      });
+      resizeObserver.observe(containerEl);
+      resizeObserverRef.current = resizeObserver;
+
+      // Also correct for the very first paint, in case the observer's
+      // first callback fires after the initial mis-sized render.
+      requestAnimationFrame(() => mapRef.current?.invalidateSize());
     })();
 
     return () => {
       cancelled = true;
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };
