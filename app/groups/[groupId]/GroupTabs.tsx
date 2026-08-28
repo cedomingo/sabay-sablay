@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CalendarRange, CalendarDays, Link2, Copy, Check } from "lucide-react";
+import { CalendarRange, CalendarDays, Link2, Copy, Check, Map as MapIcon } from "lucide-react";
 
 interface GroupTabsProps {
   scheduleTab: ReactNode;
   calendarTab: ReactNode;
+  mapTab?: ReactNode;
   inviteCode?: string;
   groupName?: string;
   userName?: string;
@@ -14,10 +15,14 @@ interface GroupTabsProps {
 /**
  * Switches between a group's views: the combined weekly Schedule
  * (who's busy/free, Mon–Sun), the group's shared Calendar (tasks & events
- * everyone can see), and an Invite tab for sharing the group link.
+ * everyone can see), the Map (where everyone resolves to right now — Map
+ * feature build plan, Phase 2), and an Invite tab for sharing the group
+ * link. `mapTab` is optional so pages that haven't wired it up yet
+ * (shouldn't happen post-Phase-2, but keeps this component from breaking
+ * if a caller is mid-migration) simply don't render the tab.
  */
-export default function GroupTabs({ scheduleTab, calendarTab, inviteCode, groupName, userName }: GroupTabsProps) {
-  const [tab, setTab] = useState<"schedule" | "calendar" | "invite">("schedule");
+export default function GroupTabs({ scheduleTab, calendarTab, mapTab, inviteCode, groupName, userName }: GroupTabsProps) {
+  const [tab, setTab] = useState<"schedule" | "calendar" | "map" | "invite">("schedule");
   const [copied, setCopied] = useState(false);
 
   async function handleCopyLink() {
@@ -57,6 +62,20 @@ export default function GroupTabs({ scheduleTab, calendarTab, inviteCode, groupN
           <CalendarDays size={14} />
           Calendar
         </button>
+        {mapTab && (
+          <button
+            type="button"
+            onClick={() => setTab("map")}
+            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${
+              tab === "map"
+                ? "bg-[#214746] text-[#F4F1E9]"
+                : "text-[#52605C] hover:bg-[#E7EBE5]"
+            }`}
+          >
+            <MapIcon size={14} />
+            Map
+          </button>
+        )}
         {inviteCode && (
           <button
             type="button"
@@ -75,6 +94,7 @@ export default function GroupTabs({ scheduleTab, calendarTab, inviteCode, groupN
 
       <div className={tab === "schedule" ? "block" : "hidden"}>{scheduleTab}</div>
       <div className={tab === "calendar" ? "block" : "hidden"}>{calendarTab}</div>
+      {mapTab && <div className={tab === "map" ? "block" : "hidden"}>{mapTab}</div>}
       {inviteCode && (
         <div className={tab === "invite" ? "block" : "hidden"}>
           <div className="rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-6">

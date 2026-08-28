@@ -3,9 +3,12 @@ import { redirect } from "next/navigation";
 import { Upload, MapPin, Users, ListChecks, UserRound } from "lucide-react";
 import { getUpcomingTasks, getAllVisibleTasks } from "@/lib/actions/tasks";
 import { checkDueDateNotifications } from "@/lib/actions/notifications";
+import { getLocationOverridesForEntries } from "@/lib/actions/map";
+import { isTbaPromptable } from "@/lib/map/resolveLocation";
 import NotificationBell from "@/components/NotificationBell";
 import PrivacyToggle from "@/components/PrivacyToggle";
 import ScheduleTabs from "./ScheduleTabs";
+import TbaLocationPrompt from "./TbaLocationPrompt";
 import CalendarView from "../calendar/CalendarView";
 import AppHeader from "@/components/AppHeader";
 
@@ -116,6 +119,14 @@ interface ScheduleData {
   total_units: number | null;
   created_at: string;
   entries: ScheduleEntry[];
+  /**
+   * Entry ids whose room is TBA/Arranged and that don't yet have a
+   * resolution (a place or "Asynchronous") or a dismissal on file — i.e.
+   * exactly the entries Phase 3's TbaLocationPrompt should render for.
+   * Computed here (not in the component) since it needs the entries'
+   * overrides, which come from a separate table.
+   */
+  tbaPromptEntryIds: Set<string>;
 }
 
 async function getSchedule(): Promise<ScheduleData | null> {
@@ -143,9 +154,30 @@ async function getSchedule(): Promise<ScheduleData | null> {
     .eq("schedule_id", schedule.id)
     .order("start_minutes", { ascending: true });
 
+  const allEntries: ScheduleEntry[] = entries || [];
+
+  // Only entries that could possibly need the prompt are worth checking
+  // overrides for — no point fetching overrides for a "MB 301" entry.
+  const promptableEntryIds = allEntries
+    .filter((e) => !e.hidden && isTbaPromptable(e.room))
+    .map((e) => e.id);
+  const overrides = await getLocationOverridesForEntries(promptableEntryIds);
+  const overrideByEntryId = new Map(overrides.map((o) => [o.scheduleEntryId, o]));
+
+  const tbaPromptEntryIds = new Set(
+    promptableEntryIds.filter((id) => {
+      const override = overrideByEntryId.get(id);
+      if (!override) return true;
+      const alreadyResolved = !!override.placeName || override.isAsync;
+      const dismissed = !!override.dismissedAt;
+      return !alreadyResolved && !dismissed;
+    })
+  );
+
   return {
     ...schedule,
-    entries: entries || [],
+    entries: allEntries,
+    tbaPromptEntryIds,
   };
 }
 
@@ -321,6 +353,11 @@ export default async function SchedulePage({
                                 {entry.room}
                               </p>
                             )}
+                            {schedule.tbaPromptEntryIds.has(entry.id) && (
+                              <div className="mt-1.5">
+                                <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
+                              </div>
+                            )}
                           </div>
                           <PrivacyToggle entryId={entry.id} initialHidden={entry.hidden} />
                         </div>
@@ -463,6 +500,11 @@ export default async function SchedulePage({
                                   <MapPin size={9} />
                                   {entry.room}
                                 </p>
+                              )}
+                              {schedule.tbaPromptEntryIds.has(entry.id) && (
+                                <div className="mt-1">
+                                  <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
+                                </div>
                               )}
                             </div>
                           );

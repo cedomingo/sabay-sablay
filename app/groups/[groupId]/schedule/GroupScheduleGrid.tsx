@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import { MapPin, Users as UsersIcon } from "lucide-react";
+// One fixed color per person, cycling if there are more members than
+// swatches, deterministically hashed from user_id. Lives in
+// lib/map/personColors.ts (Map feature Phase 2) so the Map tab's avatar
+// pins share the exact same per-person color as this grid.
+import { getColorForPerson } from "@/lib/map/personColors";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -17,30 +22,6 @@ function formatHourLabel(minutes: number): string {
   const period = h24 >= 12 ? "PM" : "AM";
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   return `${h12}:00 ${period}`;
-}
-
-// One fixed color per person, cycling if there are more members than
-// swatches. Same visual language (bg/text/border trio) as the subject
-// colors on the Personal Schedule.
-const PERSON_COLORS = [
-  { bg: "bg-[#F4A28C]", text: "text-[#512E2B]", border: "border-[#DC7C66]" },
-  { bg: "bg-[#8DDDD0]", text: "text-[#163D3A]", border: "border-[#56B9AC]" },
-  { bg: "bg-[#C9B9E9]", text: "text-[#34264F]", border: "border-[#A991D1]" },
-  { bg: "bg-[#F6D486]", text: "text-[#4C3911]", border: "border-[#DDB35A]" },
-  { bg: "bg-[#A8C7EC]", text: "text-[#1C3352]", border: "border-[#6FA8DC]" },
-  { bg: "bg-[#F0B8CE]", text: "text-[#5C1F38]", border: "border-[#E294B3]" },
-  { bg: "bg-[#B7DCB0]", text: "text-[#254A22]", border: "border-[#7EB57A]" },
-  { bg: "bg-[#E3B7AC]", text: "text-[#4A2620]", border: "border-[#C77A68]" },
-];
-
-// Deterministic hash of user_id → stable color, same approach the
-// Personal Schedule uses to hash subject names.
-function getColorForPerson(userId: string) {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return PERSON_COLORS[Math.abs(hash) % PERSON_COLORS.length];
 }
 
 // Lays out a single day's blocks on a continuous timeline. Blocks that

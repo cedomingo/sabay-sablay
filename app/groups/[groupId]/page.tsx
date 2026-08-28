@@ -5,8 +5,10 @@ import { getGroup } from "@/lib/actions/group";
 import { getGroupSchedule } from "@/lib/actions/group-schedule";
 import { getGroupCalendarTasks } from "@/lib/actions/tasks";
 import { getCourseMates } from "@/lib/actions/course-mates";
+import { getLocationOverridesForEntries } from "@/lib/actions/map";
 import GroupScheduleGrid from "./schedule/GroupScheduleGrid";
 import CalendarView from "@/app/calendar/CalendarView";
+import MapTab from "./map/MapTab";
 import GroupTabs from "./GroupTabs";
 import CreatedGroupOverlay from "./CreatedGroupOverlay";
 import Link from "next/link";
@@ -54,6 +56,15 @@ export default async function GroupDetailPage({
     getCourseMates(groupId),
     getGroupCalendarTasks(groupId).catch(() => []),
   ]);
+
+  // Overrides depend on the entry ids from scheduleData, so this can't join
+  // the Promise.all above — it fires right after instead. Only needed for
+  // the Map tab (Phase 2); an empty array just means no member has a
+  // TBA-resolution override yet, which resolveLocation already treats the
+  // same as "no override".
+  const locationOverrides = await getLocationOverridesForEntries(
+    (scheduleData?.entries ?? []).map((e) => e.entry.id)
+  );
 
   const justCreated = searchParams?.created === "1";
 
@@ -199,6 +210,21 @@ export default async function GroupDetailPage({
                 calendar.
               </p>
               <CalendarView initialTasks={calendarTasks} groupId={groupId} />
+            </div>
+          }
+          mapTab={
+            <div>
+              <p className="mb-4 text-xs text-[#717972]">
+                Everyone&apos;s current location, based on whichever class
+                (if any) they&apos;re in right now. Tap a pin or a name to
+                see what they&apos;re in.
+              </p>
+              <MapTab
+                members={scheduleData?.members ?? []}
+                entries={scheduleData?.entries ?? []}
+                overrides={locationOverrides}
+                currentUserId={user.id}
+              />
             </div>
           }
         />

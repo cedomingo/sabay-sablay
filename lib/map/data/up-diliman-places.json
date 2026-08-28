@@ -1,0 +1,379 @@
+[
+  {
+    "name": "National Institute of Physics",
+    "lat": 14.649303,
+    "lng": 121.072988,
+    "category": "academic",
+    "crs_codes": [
+      "NIP"
+    ]
+  },
+  {
+    "name": "Institute of Chemistry - Teaching Building",
+    "lat": 14.650261,
+    "lng": 121.072835,
+    "category": "academic",
+    "crs_codes": [
+      "IC"
+    ]
+  },
+  {
+    "name": "Institute of Biology",
+    "lat": 14.650885,
+    "lng": 121.071074,
+    "category": "academic",
+    "crs_codes": [
+      "IB"
+    ]
+  },
+  {
+    "name": "National Institute of Geological Sciences (NIGS)",
+    "lat": 14.648314,
+    "lng": 121.069462,
+    "category": "academic",
+    "crs_codes": [
+      "NIGS"
+    ]
+  },
+  {
+    "name": "National Institute of Molecular Biology and Biotechnology",
+    "lat": 14.65063,
+    "lng": 121.07164,
+    "category": "academic",
+    "crs_codes": [
+      "NIMBB"
+    ]
+  },
+  {
+    "name": "Institute of Environmental Science and Meteorology (IESM)",
+    "lat": 14.648398,
+    "lng": 121.070216,
+    "category": "academic",
+    "crs_codes": [
+      "IESM"
+    ]
+  },
+  {
+    "name": "Institute of Mathematics (IM)",
+    "lat": 14.648506,
+    "lng": 121.071534,
+    "category": "academic",
+    "crs_codes": [
+      "MB"
+    ]
+  },
+  {
+    "name": "Computational Science Research Center (CSRC)",
+    "lat": 14.64983,
+    "lng": 121.071342,
+    "category": "academic",
+    "crs_codes": [
+      "CSRC"
+    ]
+  },
+  {
+    "name": "College of Science Administrative Building",
+    "lat": 14.649798,
+    "lng": 121.070454,
+    "category": "academic",
+    "crs_codes": [
+      "CS"
+    ]
+  },
+  {
+    "name": "Department of Mining, Metallurgical, and Materials Engineering",
+    "lat": 14.647857,
+    "lng": 121.067998,
+    "category": "academic",
+    "crs_codes": [
+      "DMMME",
+      "FLUOR",
+      "MMM",
+      "OSTREA"
+    ]
+  },
+  {
+    "name": "UP Alumni Engineers Centennial Hall",
+    "lat": 14.64868,
+    "lng": 121.068645,
+    "category": "academic",
+    "crs_codes": [
+      "AECH"
+    ]
+  },
+  {
+    "name": "Institute of Civil Engineering - Main Building",
+    "lat": 14.648554,
+    "lng": 121.06601,
+    "category": "academic",
+    "crs_codes": [
+      "ICE"
+    ]
+  },
+  {
+    "name": "College of Engineering",
+    "lat": 14.656247,
+    "lng": 121.069658,
+    "category": "academic",
+    "crs_codes": [
+      "MH"
+    ]
+  },
+  {
+    "name": "German Yia Hall",
+    "lat": 14.65737,
+    "lng": 121.071211,
+    "category": "academic",
+    "crs_codes": [
+      "IE"
+    ]
+  },
+  {
+    "name": "Marine Science Institute (MSI)",
+    "lat": 14.650829,
+    "lng": 121.068927,
+    "category": "academic",
+    "crs_codes": [
+      "MSI"
+    ]
+  },
+  {
+    "name": "Math Building Annex (MBAN)",
+    "lat": 14.648616,
+    "lng": 121.071986,
+    "category": "academic",
+    "crs_codes": [
+      "MBAN"
+    ]
+  },
+  {
+    "name": "Gusali 2",
+    "lat": 14.651866,
+    "lng": 121.072304,
+    "category": "academic",
+    "crs_codes": [
+      "GUSALI"
+    ]
+  },
+  {
+    "name": "Vinzons Hall",
+    "lat": 14.654309,
+    "lng": 121.073426,
+    "category": "academic",
+    "crs_codes": [
+      "STUD"
+    ]
+  },
+  {
+    "name": "Asian Institute of Tourism",
+    "lat": 14.660796,
+    "lng": 121.061236,
+    "category": "academic",
+    "crs_codes": [
+      "AIT"
+    ]
+  },
+  {
+    "name": "College of Architecture",
+    "lat": 14.651587,
+    "lng": 121.064977,
+    "category": "academic",
+    "crs_codes": [
+      "ARCHI"
+    ]
+  },
+  {
+    "name": "College of Arts and Letters",
+    "lat": 14.652638,
+    "lng": 121.067428,
+    "category": "academic",
+    "crs_codes": [
+      "CAL"
+    ]
+  },
+  {
+    "name": "Enriquez Hall",
+    "lat": 14.652002,
+    "lng": 121.06147,
+    "category": "academic",
+    "crs_codes": [
+      "ENRIQUEZ"
+    ]
+  },
+  {
+    "name": "Alonso Hall",
+    "lat": 14.652243,
+    "lng": 121.073128,
+    "category": "academic",
+    "crs_codes": [
+      "ALON",
+      "CHE",
+      "HRIM",
+      "HRIML",
+      "IDS"
+    ]
+  },
+  {
+    "name": "Child Development Center",
+    "lat": 14.652179,
+    "lng": 121.073789,
+    "category": "academic",
+    "crs_codes": [
+      "CDC"
+    ]
+  },
+  {
+    "name": "Plaridel Hall",
+    "lat": 14.656515,
+    "lng": 121.064465,
+    "category": "academic",
+    "crs_codes": [
+      "TV"
+    ]
+  },
+  {
+    "name": "CMC Media Center",
+    "lat": 14.656301,
+    "lng": 121.063586,
+    "category": "academic",
+    "crs_codes": [
+      "MCB"
+    ]
+  },
+  {
+    "name": "Abelardo Hall",
+    "lat": 14.657102,
+    "lng": 121.065447,
+    "category": "academic",
+    "crs_codes": [
+      "AH"
+    ]
+  },
+  {
+    "name": "Lagmay Hall",
+    "lat": 14.653557,
+    "lng": 121.071311,
+    "category": "academic",
+    "crs_codes": [
+      "LH"
+    ]
+  },
+  {
+    "name": "CSSP Faculty Center",
+    "lat": 14.653165,
+    "lng": 121.071327,
+    "category": "academic"
+  },
+  {
+    "name": "Tandang Sora Hall",
+    "lat": 14.657191,
+    "lng": 121.063855,
+    "category": "academic",
+    "crs_codes": [
+      "CSWCD"
+    ]
+  },
+  {
+    "name": "School of Economics",
+    "lat": 14.656253,
+    "lng": 121.07321,
+    "category": "academic",
+    "crs_codes": [
+      "SE"
+    ]
+  },
+  {
+    "name": "Malcolm Hall",
+    "lat": 14.656481,
+    "lng": 121.072095,
+    "category": "academic",
+    "crs_codes": [
+      "LAW"
+    ]
+  },
+  {
+    "name": "Bonifacio Hall",
+    "lat": 14.657081,
+    "lng": 121.061914,
+    "category": "academic",
+    "crs_codes": [
+      "SOLAIR"
+    ]
+  },
+  {
+    "name": "Technology Management Center",
+    "lat": 14.647296,
+    "lng": 121.071904,
+    "category": "academic",
+    "crs_codes": [
+      "TMC"
+    ]
+  },
+  {
+    "name": "Virata School of Business",
+    "lat": 14.655268,
+    "lng": 121.073333,
+    "category": "academic",
+    "crs_codes": [
+      "BA"
+    ]
+  },
+  {
+    "name": "Pavilion 1",
+    "lat": 14.652857,
+    "lng": 121.068837,
+    "category": "academic",
+    "crs_codes": [
+      "PAV"
+    ]
+  },
+  {
+    "name": "Pavilion 2",
+    "lat": 14.652849,
+    "lng": 121.069419,
+    "category": "academic",
+    "crs_codes": [
+      "BIOETHICS",
+      "PAV2"
+    ]
+  },
+  {
+    "name": "Pavilion 3",
+    "lat": 14.652829,
+    "lng": 121.069873,
+    "category": "academic",
+    "crs_codes": [
+      "PAV3"
+    ]
+  },
+  {
+    "name": "Pavilion 4",
+    "lat": 14.652879,
+    "lng": 121.070464,
+    "category": "academic",
+    "crs_codes": [
+      "PAV4"
+    ]
+  },
+  {
+    "name": "Palma Hall",
+    "lat": 14.653177,
+    "lng": 121.069675,
+    "category": "academic",
+    "crs_codes": [
+      "PH"
+    ]
+  },
+  {
+    "name": "College of Human Kinetics",
+    "lat": 14.659217,
+    "lng": 121.062863,
+    "category": "academic",
+    "crs_codes": [
+      "V",
+      "V204A",
+      "V204B",
+      "V210"
+    ]
+  }
+]
