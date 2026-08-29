@@ -140,6 +140,77 @@ export async function toggleEntryHidden(entryId: string) {
   return { hidden: !entry.hidden };
 }
 
+// ============================================================
+// Manual corrections (Profile tab) — fix an OCR/CRS mistake directly on
+// the entry itself (e.g. a mis-scanned room/building code), as opposed to
+// the "Set your spot" override system in lib/actions/map.ts, which layers
+// a personal annotation on top of a TBA/Arranged entry without touching
+// the original text. Editing the entry's own `room` (or subject/number/
+// section) here re-feeds resolveEntryLocation()'s building lookup, so a
+// corrected room string also fixes the entry's pin on the Map tab.
+// ============================================================
+
+export type CorrectableScheduleField = "subject" | "number" | "section" | "room";
+
+const CORRECTABLE_FIELDS: readonly CorrectableScheduleField[] = [
+  "subject",
+  "number",
+  "section",
+  "room",
+];
+
+export async function updateScheduleEntryField(
+  entryId: string,
+  field: CorrectableScheduleField,
+  value: string
+) {
+  if (!CORRECTABLE_FIELDS.includes(field)) {
+    throw new Error("That field can't be corrected here");
+  }
+
+  const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Verify ownership before writing — mirrors toggleEntryHidden's pattern.
+  const { data: entry } = await supabase
+    .from("schedule_entries")
+    .select("id, schedules!inner(user_id)")
+    .eq("id", entryId)
+    .single();
+
+  if (!entry) throw new Error("Entry not found");
+  if ((entry.schedules as any)?.user_id !== user.id) {
+    throw new Error("Not authorized");
+  }
+
+  const trimmed = value.trim();
+  // subject/number are required on every entry; room/section may be
+  // cleared out entirely (stored as null, same as an OCR miss would be).
+  if ((field === "subject" || field === "number") && !trimmed) {
+    throw new Error(`${field === "subject" ? "Subject" : "Number"} can't be empty`);
+  }
+
+  const { error } = await supabase
+    .from("schedule_entries")
+    .update({ [field]: trimmed || null })
+    .eq("id", entryId);
+
+  if (error) {
+    console.error("updateScheduleEntryField error:", error);
+    throw new Error("Failed to save correction");
+  }
+
+  revalidatePath("/schedule");
+  revalidatePath("/profile");
+
+  return { [field]: trimmed || null };
+}
+
 export async function getMySchedule() {
   const supabase = createClient();
 

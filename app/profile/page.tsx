@@ -3,10 +3,12 @@ import { redirect } from "next/navigation";
 import { ArrowLeft, Mail, Users } from "lucide-react";
 import Link from "next/link";
 import { getMyProfile, getMyScheduleSummary } from "@/lib/actions/profile";
+import { getMySchedule } from "@/lib/actions/schedule";
 import { getMyGroups } from "@/lib/actions/group";
 import AppHeader from "@/components/AppHeader";
 import EditableName from "./EditableName";
 import ManageSchedule from "./ManageSchedule";
+import ScheduleCorrections from "./ScheduleCorrections";
 
 export default async function ProfilePage() {
   const supabase = createClient();
@@ -16,9 +18,10 @@ export default async function ProfilePage() {
 
   if (!user) redirect("/auth/login");
 
-  const [profile, schedule, groups] = await Promise.all([
+  const [profile, schedule, fullSchedule, groups] = await Promise.all([
     getMyProfile(),
     getMyScheduleSummary(),
+    getMySchedule(),
     getMyGroups().catch(() => []),
   ]);
 
@@ -79,6 +82,11 @@ export default async function ProfilePage() {
           </p>
           <ManageSchedule schedule={schedule} />
         </div>
+
+        {/* Schedule corrections — fix OCR/CRS mistakes (room, building, etc.) */}
+        {fullSchedule && fullSchedule.entries.length > 0 && (
+          <ScheduleCorrections entries={fullSchedule.entries} />
+        )}
 
         {/* Groups summary */}
         <div>

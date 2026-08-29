@@ -48,6 +48,7 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false); // resolved or dismissed this session
   const [query, setQuery] = useState("");
+  const [roomNumber, setRoomNumber] = useState("");
   const [saving, setSaving] = useState<"place" | "async" | "dismiss" | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,15 +65,23 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
     if (saving) return;
     setOpen(false);
     setQuery("");
+    setRoomNumber("");
   }
 
   async function handlePick(place: Place) {
     setSaving("place");
     try {
-      await resolveTbaWithPlace(entryId, place.name);
+      const trimmedRoom = roomNumber.trim();
+      await resolveTbaWithPlace(entryId, place.name, trimmedRoom || undefined);
       setHidden(true);
       setOpen(false);
-      toast.success(`Saved — you'll show as at ${place.name} for this class.`);
+      const code = place.crs_codes?.[0];
+      const label = trimmedRoom
+        ? code
+          ? `${code} ${trimmedRoom}`
+          : `${place.name} ${trimmedRoom}`
+        : place.name;
+      toast.success(`Saved — you'll show as at ${label} for this class.`);
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't save that. Please try again.");
@@ -171,7 +180,7 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
               recorded a real one. Let your groupmates know where to actually find you.
             </p>
 
-            {/* Option 1: search/select a place */}
+            {/* Option 1: search/select a place, with an optional room number */}
             <div className="mt-4">
               <div className="relative">
                 <Search
@@ -186,6 +195,23 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
                   disabled={!!saving}
                   className="w-full rounded-xl border border-[#C8C6BD] bg-white py-2.5 pl-9 pr-3 text-sm text-[#214746] outline-none placeholder:text-[#B9BDB4] focus:border-[#214746] disabled:opacity-60"
                 />
+              </div>
+
+              <div className="mt-2">
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[#87908A]">
+                  Room (optional)
+                </label>
+                <input
+                  value={roomNumber}
+                  onChange={(e) => setRoomNumber(e.target.value)}
+                  placeholder="e.g. 304"
+                  disabled={!!saving}
+                  className="w-full rounded-xl border border-[#C8C6BD] bg-white px-3 py-2 text-sm text-[#214746] outline-none placeholder:text-[#B9BDB4] focus:border-[#214746] disabled:opacity-60"
+                />
+                <p className="mt-1 text-[10px] text-[#87908A]">
+                  Shown with the building code, e.g. &ldquo;MB 304&rdquo; or
+                  &ldquo;CAL 305&rdquo;.
+                </p>
               </div>
 
               <div className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-0.5">

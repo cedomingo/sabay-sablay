@@ -7,6 +7,7 @@ import type { GroupMemberEntry } from "@/lib/actions/group-schedule";
 import {
   resolveLocation,
   findActiveEntry,
+  getOverrideDisplayRoom,
   type LocationResult,
   type LocationOverride,
   type ScheduleEntryLike,
@@ -25,17 +26,6 @@ import {
 } from "@/lib/map/tileConfig";
 
 const places = placesData as Place[];
-
-/** Extract just "TBA" or "Arranged" from room strings like "PE TBA" */
-function getTbaDisplay(room: string | null | undefined): string | null {
-  if (!room) return null;
-  const trimmed = room.trim();
-  const lower = trimmed.toLowerCase();
-  if (lower === "tba" || lower === "arranged") return trimmed;
-  const match = lower.match(/\b(tba|arranged)$/);
-  if (match) return match[1].toUpperCase();
-  return null;
-}
 
 // Client-side recompute only (build plan Phase 2) — no new backend calls,
 // just re-running resolveLocation against data we already fetched.
@@ -194,7 +184,17 @@ export default function MapTab({ members, entries, overrides, currentUserId }: P
       const location = resolveLocation({ entries: memberEntries, now, places, overrides });
       const activeEntry = findActiveEntry(memberEntries, now);
       const activeDetail = activeEntry ? entryDetailById.get(activeEntry.id) ?? null : null;
-      return { member, location, activeDetail };
+      const activeOverride = activeEntry
+        ? overrides.find((o) => o.scheduleEntryId === activeEntry.id) ?? null
+        : null;
+      const activeDetailRoom = activeDetail
+        ? getOverrideDisplayRoom({
+            rawRoom: activeDetail.room,
+            override: activeOverride,
+            places,
+          })
+        : null;
+      return { member, location, activeDetail, activeDetailRoom };
     });
   }, [members, entriesByUser, entryDetailById, now, overrides]);
 
@@ -356,6 +356,7 @@ export default function MapTab({ members, entries, overrides, currentUserId }: P
               member={selected.member}
               location={selected.location}
               activeDetail={selected.activeDetail}
+              activeDetailRoom={selected.activeDetailRoom}
               isOwnLocation={selected.member.user_id === currentUserId}
               onClose={() => setSelectedUserId(null)}
             />
@@ -427,12 +428,14 @@ function SelectedInfoPanel({
   member,
   location,
   activeDetail,
+  activeDetailRoom,
   isOwnLocation,
   onClose,
 }: {
   member: Member;
   location: LocationResult;
   activeDetail: GroupMemberEntry["entry"] | null;
+  activeDetailRoom: string | null;
   isOwnLocation: boolean;
   onClose: () => void;
 }) {
@@ -492,7 +495,7 @@ function SelectedInfoPanel({
               {activeDetail.start_display}–{activeDetail.end_display}
             </p>
             <p className="mt-1 text-xs text-[#717972]">
-              Room: {activeDetail.room && activeDetail.room.trim() ? (getTbaDisplay(activeDetail.room) ?? activeDetail.room) : "—"}
+              Room: {activeDetailRoom ?? "—"}
             </p>
           </>
         ) : (

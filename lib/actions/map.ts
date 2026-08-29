@@ -23,7 +23,7 @@ export async function getLocationOverridesForEntries(
   const { data, error } = await supabase
     .from("schedule_entry_location_overrides")
     .select(
-      "schedule_entry_id, place_name, custom_lat, custom_lng, custom_label, is_async, dismissed_at"
+      "schedule_entry_id, place_name, custom_lat, custom_lng, custom_label, custom_room, is_async, dismissed_at"
     )
     .in("schedule_entry_id", entryIds);
 
@@ -35,6 +35,7 @@ export async function getLocationOverridesForEntries(
     customLat: row.custom_lat,
     customLng: row.custom_lng,
     customLabel: row.custom_label,
+    customRoom: row.custom_room,
     isAsync: row.is_async,
     dismissedAt: row.dismissed_at,
   }));
@@ -77,15 +78,24 @@ async function assertOwnsEntry(entryId: string) {
 
 /**
  * Resolution option 1 (build plan §A): the entry owner picked a place from
- * up-diliman-places.json for a TBA/Arranged entry.
+ * up-diliman-places.json for a TBA/Arranged entry. `customRoom` is the
+ * optional room/unit number typed alongside it (e.g. "304") — stored so
+ * the schedule/map can show "MB 304" instead of just the building name,
+ * and so the raw "TBA" text stops being shown anywhere once resolved (see
+ * getOverrideDisplayRoom in lib/map/resolveLocation.ts).
  */
-export async function resolveTbaWithPlace(entryId: string, placeName: string) {
+export async function resolveTbaWithPlace(
+  entryId: string,
+  placeName: string,
+  customRoom?: string
+) {
   const supabase = await assertOwnsEntry(entryId);
 
   const { error } = await supabase.from("schedule_entry_location_overrides").upsert(
     {
       schedule_entry_id: entryId,
       place_name: placeName,
+      custom_room: customRoom?.trim() || null,
       is_async: false,
       custom_lat: null,
       custom_lng: null,
@@ -114,6 +124,7 @@ export async function resolveTbaAsAsync(entryId: string) {
       schedule_entry_id: entryId,
       is_async: true,
       place_name: null,
+      custom_room: null,
       custom_lat: null,
       custom_lng: null,
       custom_label: null,

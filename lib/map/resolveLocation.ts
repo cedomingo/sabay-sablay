@@ -50,6 +50,15 @@ export interface LocationOverride {
   customLabel: string | null;
   isAsync: boolean;
   /**
+   * Optional room/unit number the entry owner typed in alongside a picked
+   * place (e.g. "304" for "Institute of Mathematics (IM)" → displayed as
+   * "MB 304"). Only meaningful alongside `placeName`; ignored otherwise.
+   * See getOverrideDisplayRoom() below — this is what makes "Set your
+   * spot" actually replace the stale "TBA" text shown to the user instead
+   * of only affecting the map pin.
+   */
+  customRoom?: string | null;
+  /**
    * UI-only metadata for the Phase 3 TBA-resolution prompt (build plan
    * §A): whether the entry owner dismissed the "where will you actually
    * be?" prompt without resolving it, so it doesn't keep nagging them.
@@ -315,4 +324,63 @@ export function resolveEntryLocation(params: {
   }
 
   return { state: "building-unresolved", rawRoom: entry.room ?? "" };
+}
+
+// ===========================================================================
+// Display text — what to actually print where a room string is shown
+// ===========================================================================
+
+/** Extract just "TBA" or "Arranged" from room strings like "PE TBA". */
+export function getTbaDisplay(room: string | null | undefined): string | null {
+  if (!room) return null;
+  const trimmed = room.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === "tba" || lower === "arranged") return trimmed;
+  const match = lower.match(/\b(tba|arranged)$/);
+  if (match) return match[1].toUpperCase();
+  return null;
+}
+
+/**
+ * The room text to show a user for an entry, given any location override
+ * on file. A resolved "Set your spot" override should always win over the
+ * raw CRS room string — otherwise a student who resolves their TBA class
+ * still sees "TBA" everywhere except the map pin, which is confusing (this
+ * is exactly the bug the override's UI is meant to fix). Falls back to the
+ * raw room text (via getTbaDisplay's TBA/Arranged shortening) when there's
+ * no override, or the override doesn't actually resolve to anything shown.
+ *
+ * Prefers the place's short CRS code (e.g. "MB") over its full display
+ * name so a resolved spot reads the same way as everything else on the
+ * schedule ("MB 304" rather than "Institute of Mathematics (IM) 304").
+ * Falls back to the full place name when the place has no confirmed code.
+ */
+export function getOverrideDisplayRoom(params: {
+  rawRoom: string | null | undefined;
+  override: LocationOverride | null | undefined;
+  places: Place[];
+}): string | null {
+  const { rawRoom, override, places } = params;
+  const fallback = rawRoom ? (getTbaDisplay(rawRoom) ?? rawRoom) : null;
+
+  if (!override) return fallback;
+
+  if (override.isAsync) return "Asynchronous";
+
+  if (override.placeName) {
+    const place = places.find((p) => p.name === override.placeName);
+    const code = place?.crs_codes?.[0];
+    const room = override.customRoom?.trim();
+    if (code && room) return `${code} ${room}`;
+    if (room) return `${override.placeName} ${room}`;
+    return code ?? override.placeName;
+  }
+
+  if (override.customLat != null && override.customLng != null) {
+    return override.customLabel ?? "Custom location";
+  }
+
+  // Override row exists but has none of the three fields set (e.g. a
+  // dismissed-only row) — nothing to show instead, fall back to raw text.
+  return fallback;
 }

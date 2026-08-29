@@ -4,7 +4,15 @@ import { Upload, MapPin, Users, ListChecks, UserRound } from "lucide-react";
 import { getUpcomingTasks, getAllVisibleTasks } from "@/lib/actions/tasks";
 import { checkDueDateNotifications } from "@/lib/actions/notifications";
 import { getLocationOverridesForEntries } from "@/lib/actions/map";
-import { isTbaPromptable, type LocationOverride } from "@/lib/map/resolveLocation";
+import {
+  isTbaPromptable,
+  getOverrideDisplayRoom,
+  type LocationOverride,
+} from "@/lib/map/resolveLocation";
+import type { Place } from "@/lib/map/data/types";
+import placesData from "@/lib/map/data/up-diliman-places.json";
+
+const places = placesData as Place[];
 import NotificationBell from "@/components/NotificationBell";
 import PrivacyToggle from "@/components/PrivacyToggle";
 import ScheduleTabs from "./ScheduleTabs";
@@ -13,17 +21,6 @@ import CalendarView from "../calendar/CalendarView";
 import AppHeader from "@/components/AppHeader";
 import { SUBJECT_COLORS, buildSubjectColorMap } from "@/lib/map/subjectColors";
 import PersonalMapTab from "./map/PersonalMapTab";
-
-/** Extract just "TBA" or "Arranged" from room strings like "PE TBA" */
-function getTbaDisplay(room: string | null | undefined): string | null {
-  if (!room) return null;
-  const trimmed = room.trim();
-  const lower = trimmed.toLowerCase();
-  if (lower === "tba" || lower === "arranged") return trimmed;
-  const match = lower.match(/\b(tba|arranged)$/);
-  if (match) return match[1].toUpperCase();
-  return null;
-}
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
@@ -106,6 +103,13 @@ export interface ScheduleEntry {
   section: string;
   course_raw: string;
   room: string | null;
+  /**
+   * What to actually show for this entry's room — prefers a resolved
+   * "Set your spot" override (see getOverrideDisplayRoom) over the raw
+   * `room` text, so a class that was TBA no longer displays "TBA"
+   * everywhere once the student has told us where they'll really be.
+   */
+  displayRoom: string | null;
   hidden: boolean;
   enrichment_matched: boolean;
 }
@@ -153,7 +157,7 @@ async function getSchedule(): Promise<ScheduleData | null> {
     .eq("schedule_id", schedule.id)
     .order("start_minutes", { ascending: true });
 
-  const allEntries: ScheduleEntry[] = entries || [];
+  const allEntries: Omit<ScheduleEntry, "displayRoom">[] = entries || [];
 
   // Fetch overrides for ALL non-hidden entries so the Map tab can resolve
   // every class location, not just TBA-promptable ones.
@@ -178,9 +182,18 @@ async function getSchedule(): Promise<ScheduleData | null> {
     })
   );
 
+  const entriesWithDisplayRoom: ScheduleEntry[] = allEntries.map((e) => ({
+    ...e,
+    displayRoom: getOverrideDisplayRoom({
+      rawRoom: e.room,
+      override: overrideByEntryId.get(e.id) ?? null,
+      places,
+    }),
+  }));
+
   return {
     ...schedule,
-    entries: allEntries,
+    entries: entriesWithDisplayRoom,
     tbaPromptEntryIds,
     overrides,
   };
@@ -348,10 +361,10 @@ export default async function SchedulePage({
                             <p className="mt-0.5 font-mono text-[11px] text-[#52605C]">
                               {entry.start_display}&ndash;{entry.end_display}
                             </p>
-                            {entry.room && (
+                            {entry.displayRoom && (
                               <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-[#87908A]">
                                 <MapPin size={9} />
-                                {getTbaDisplay(entry.room) ?? entry.room}
+                                {entry.displayRoom}
                               </p>
                             )}
                             {schedule.tbaPromptEntryIds.has(entry.id) && (
@@ -463,9 +476,15 @@ export default async function SchedulePage({
                         {dayEntries.map((entry) => {
                           const color = subjectColorMap.get(entry.subject) || SUBJECT_COLORS[0];
                           const top = (entry.start_minutes - HOUR_START) * PIXELS_PER_MINUTE;
+                          // Blocks needing the "Set your spot" chip (title +
+                          // time + room + chip, four stacked lines) need more
+                          // room than a short class would otherwise get, or
+                          // the chip gets clipped by this block's
+                          // overflow-hidden — see the Math-23-TBA report.
+                          const needsTbaChip = schedule.tbaPromptEntryIds.has(entry.id);
                           const height = Math.max(
                             (entry.end_minutes - entry.start_minutes) * PIXELS_PER_MINUTE,
-                            22
+                            needsTbaChip ? 88 : 22
                           );
                           const gap = 4;
                           const leftPct = (entry.col / entry.colCount) * 100;
@@ -496,10 +515,10 @@ export default async function SchedulePage({
                               <p className="mt-0.5 font-mono text-[9px] opacity-75">
                                 {entry.start_display}–{entry.end_display}
                               </p>
-                              {entry.room && (
+                              {entry.displayRoom && (
                                 <p className="mt-1 flex items-center gap-1 font-mono text-[9px] opacity-75">
                                   <MapPin size={9} />
-                                  {getTbaDisplay(entry.room) ?? entry.room}
+                                  {entry.displayRoom}
                                 </p>
                               )}
                               {schedule.tbaPromptEntryIds.has(entry.id) && (

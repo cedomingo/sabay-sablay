@@ -81,17 +81,6 @@ function describeLocation(location: LocationResult): {
   }
 }
 
-/** Extract just "TBA" or "Arranged" from room strings like "PE TBA" */
-function getTbaDisplay(room: string | null | undefined): string | null {
-  if (!room) return null;
-  const trimmed = room.trim();
-  const lower = trimmed.toLowerCase();
-  if (lower === "tba" || lower === "arranged") return trimmed;
-  const match = lower.match(/\b(tba|arranged)$/);
-  if (match) return match[1].toUpperCase();
-  return null;
-}
-
 /** Build a Leaflet divIcon for a subject-colored pin marker. */
 function buildMarkerHtml(
   color: { hex: string; border: string },
@@ -142,6 +131,24 @@ interface BuildingGroup {
 interface ResolvedEntry {
   entry: ScheduleEntry;
   location: LocationResult;
+  color: { hex: string; border: string } | undefined;
+}
+
+/**
+ * One pin on the map = one course at one building, not one class session.
+ * A course meeting several times a week in the same building collapses
+ * into a single PinGroup (and therefore a single marker); the same course
+ * meeting in a *different* building gets its own separate PinGroup/marker,
+ * since the grouping key includes the resolved coordinates.
+ */
+interface PinGroup {
+  key: string;
+  subject: string;
+  number: string;
+  label: string;
+  lat: number;
+  lng: number;
+  entries: ResolvedEntry[];
   color: { hex: string; border: string } | undefined;
 }
 
@@ -213,47 +220,68 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
     return active?.id ?? null;
   }, [entriesLike, now]);
 
-  // Cluster pinned entries by coordinate, then shingle
-  const pinned = useMemo(() => {
-    const buckets = new Map<
-      string,
-      Array<
-        ResolvedEntry & { lat: number; lng: number; label: string }
-      >
-    >();
+  // Collapse resolved, pinnable entries into one PinGroup per
+  // (course, building) — same course + same building = 1 pin, regardless
+  // of how many days/times it meets there. Same course in a *different*
+  // building still gets its own separate pin, since coordinates are part
+  // of the grouping key.
+  const pinGroups: PinGroup[] = useMemo(() => {
+    const map = new Map<string, PinGroup>();
     for (const r of resolved) {
       const coords = getPinCoords(r.location);
       if (!coords) continue;
-      const key = `${coords.lat.toFixed(5)},${coords.lng.toFixed(5)}`;
+      const key = `${r.entry.subject}|${r.entry.number}|${coords.lat.toFixed(5)},${coords.lng.toFixed(5)}`;
+      let group = map.get(key);
+      if (!group) {
+        group = {
+          key,
+          subject: r.entry.subject,
+          number: r.entry.number,
+          label: coords.label,
+          lat: coords.lat,
+          lng: coords.lng,
+          entries: [],
+          color: r.color,
+        };
+        map.set(key, group);
+      }
+      group.entries.push(r);
+    }
+    return [...map.values()];
+  }, [resolved]);
+
+  // Cluster pin groups by coordinate, then shingle — this still stacks
+  // *different* courses that happen to share a building/room, just no
+  // longer stacks multiple sessions of the *same* course there.
+  const pinned = useMemo(() => {
+    const buckets = new Map<string, PinGroup[]>();
+    for (const g of pinGroups) {
+      const key = `${g.lat.toFixed(5)},${g.lng.toFixed(5)}`;
       const arr = buckets.get(key) ?? [];
-      arr.push({ ...r, ...coords });
+      arr.push(g);
       buckets.set(key, arr);
     }
 
     const out: Array<{
-      entry: ScheduleEntry;
-      location: LocationResult;
-      color: { hex: string; border: string } | undefined;
+      group: PinGroup;
       lat: number;
       lng: number;
       stackIndex: number;
       stackSize: number;
     }> = [];
     for (const group of buckets.values()) {
-      group.forEach((r, i) => {
+      group.forEach((g, i) => {
         out.push({
-          entry: r.entry,
-          location: r.location,
-          color: r.color,
-          lat: r.lat + STACK_STEP_LAT_DEG * i,
-          lng: r.lng + STACK_STEP_LNG_DEG * i,
+          group: g,
+          lat: g.lat + STACK_STEP_LAT_DEG * i,
+          lng: g.lng + STACK_STEP_LNG_DEG * i,
           stackIndex: i,
           stackSize: group.length,
         });
       });
     }
     return out;
-  }, [resolved]);
+  }, [pinGroups]);
 
   // Init the Leaflet map once on mount
   useEffect(() => {
@@ -306,8 +334,10 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
       markersRef.current = [];
 
       for (const p of pinned) {
-        const isActive = p.entry.id === activeEntryId;
-        const color = p.color ?? { hex: "#F4A28C", border: "#DC7C66" };
+        const isActive = p.group.entries.some(
+          (e) => e.entry.id === activeEntryId
+        );
+        const color = p.group.color ?? { hex: "#F4A28C", border: "#DC7C66" };
         const isFrontOfStack = p.stackIndex === p.stackSize - 1;
         const scale = Math.max(
           STACK_MIN_SCALE,
@@ -327,7 +357,9 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
           icon,
           zIndexOffset: isActive ? 1000 : p.stackIndex * 10,
         }).addTo(mapRef.current);
-        marker.on("click", () => setSelectedEntryId(p.entry.id));
+        marker.on("click", () =>
+          setSelectedEntryId(p.group.entries[0].entry.id)
+        );
         markersRef.current.push(marker);
       }
     })();
@@ -410,6 +442,15 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
     ? resolved.find((r) => r.entry.id === selectedEntryId) ?? null
     : null;
 
+  // A selected entry that resolves to a pin belongs to exactly one
+  // PinGroup — show the course-level panel for it. Off-campus/unresolved
+  // entries have no pin/group, so they fall back to the single-entry panel.
+  const selectedGroup = selectedEntryId
+    ? pinGroups.find((g) =>
+        g.entries.some((e) => e.entry.id === selectedEntryId)
+      ) ?? null
+    : null;
+
   return (
     <div className="space-y-4">
       {usingFallbackTiles && (
@@ -441,13 +482,21 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
           )}
 
           {selected && (
-            <SelectedInfoPanel
-              entry={selected.entry}
-              location={selected.location}
-              color={selected.color}
-              isActive={selected.entry.id === activeEntryId}
-              onClose={() => setSelectedEntryId(null)}
-            />
+            selectedGroup ? (
+              <GroupInfoPanel
+                group={selectedGroup}
+                activeEntryId={activeEntryId}
+                onClose={() => setSelectedEntryId(null)}
+              />
+            ) : (
+              <SelectedInfoPanel
+                entry={selected.entry}
+                location={selected.location}
+                color={selected.color}
+                isActive={selected.entry.id === activeEntryId}
+                onClose={() => setSelectedEntryId(null)}
+              />
+            )
           )}
         </div>
 
@@ -590,7 +639,7 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
                                         ·
                                       </span>
                                       <span className="truncate text-[#87908A]">
-                                        {getTbaDisplay(r.entry.room) ?? r.entry.room}
+                                        {r.entry.displayRoom ?? r.entry.room}
                                       </span>
                                     </>
                                   )}
@@ -612,6 +661,73 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Info panel for a map pin — one course at one building. Lists every
+ * session (day + time) that meets there, rather than a single class
+ * instance, since the pin itself now represents the whole course.
+ */
+function GroupInfoPanel({
+  group,
+  activeEntryId,
+  onClose,
+}: {
+  group: PinGroup;
+  activeEntryId: string | null;
+  onClose: () => void;
+}) {
+  const sample = group.entries[0].entry;
+  const hasActive = group.entries.some((e) => e.entry.id === activeEntryId);
+
+  return (
+    <div className="absolute bottom-3 left-3 right-3 z-[500] rounded-2xl border border-[#D0CEC4] bg-white/95 p-4 shadow-elevated backdrop-blur-sm md:left-3 md:right-auto md:w-80">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-[#214746]">
+            {group.subject} {group.number}
+            {sample.section && (
+              <span className="ml-1 text-xs font-normal text-[#87908A]">
+                {sample.section}
+              </span>
+            )}
+          </p>
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-[#286057]">
+            <MapPin size={11} />
+            {group.label}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-[#87908A] hover:bg-[#F4F1E9]"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-1.5 border-t border-[#E1DFD7] pt-3">
+        {hasActive && (
+          <span className="mb-1 inline-flex rounded-full bg-[#D9E7DE] px-1.5 py-0.5 text-[9px] font-bold text-[#286057]">
+            CURRENT
+          </span>
+        )}
+        {group.entries.map((r) => (
+          <p
+            key={r.entry.id}
+            className={`flex items-center gap-1.5 text-xs ${
+              r.entry.id === activeEntryId
+                ? "font-semibold text-[#214746]"
+                : "text-[#717972]"
+            }`}
+          >
+            <Clock size={11} className="shrink-0" />
+            {r.entry.day} · {r.entry.start_display}–{r.entry.end_display}
+          </p>
+        ))}
       </div>
     </div>
   );
@@ -695,7 +811,7 @@ function SelectedInfoPanel({
           {entry.start_display}–{entry.end_display}
         </p>
         <p className="mt-1 text-xs text-[#717972]">
-          Room: {entry.room && entry.room.trim() ? (getTbaDisplay(entry.room) ?? entry.room) : "—"}
+          Room: {entry.room && entry.room.trim() ? (entry.displayRoom ?? entry.room) : "—"}
         </p>
         <p className="mt-1 text-xs text-[#87908A]">{entry.day}</p>
       </div>
