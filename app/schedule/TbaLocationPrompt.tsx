@@ -142,10 +142,10 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
           e.stopPropagation();
           setOpen(true);
         }}
-        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#DDB35A]/60 bg-[#FBF2D9] px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wide text-[#8A6A1F] transition-colors hover:bg-[#F6E4B4]"
+        className="mt-0.5 md:mt-1 flex items-center gap-1 font-mono text-[10px] md:text-[9px] text-[#87908A] opacity-75 hover:opacity-100 hover:text-[#286057] transition-colors cursor-pointer"
         title="This class's room is TBA — where will you actually be?"
       >
-        <AlertTriangle size={9} />
+        <MapPin size={9} />
         Set your spot
       </button>
 

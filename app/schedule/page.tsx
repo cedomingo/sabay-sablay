@@ -361,16 +361,14 @@ export default async function SchedulePage({
                             <p className="mt-0.5 font-mono text-[11px] text-[#52605C]">
                               {entry.start_display}&ndash;{entry.end_display}
                             </p>
-                            {entry.displayRoom && (
+                            {!schedule.tbaPromptEntryIds.has(entry.id) && entry.displayRoom && (
                               <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-[#87908A]">
                                 <MapPin size={9} />
                                 {entry.displayRoom}
                               </p>
                             )}
                             {schedule.tbaPromptEntryIds.has(entry.id) && (
-                              <div className="mt-1.5">
-                                <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
-                              </div>
+                              <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
                             )}
                           </div>
                           <PrivacyToggle entryId={entry.id} initialHidden={entry.hidden} />
@@ -515,16 +513,14 @@ export default async function SchedulePage({
                               <p className="mt-0.5 font-mono text-[9px] opacity-75">
                                 {entry.start_display}–{entry.end_display}
                               </p>
-                              {entry.displayRoom && (
+                              {!schedule.tbaPromptEntryIds.has(entry.id) && entry.displayRoom && (
                                 <p className="mt-1 flex items-center gap-1 font-mono text-[9px] opacity-75">
                                   <MapPin size={9} />
                                   {entry.displayRoom}
                                 </p>
                               )}
                               {schedule.tbaPromptEntryIds.has(entry.id) && (
-                                <div className="mt-1">
-                                  <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
-                                </div>
+                                <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
                               )}
                             </div>
                           );
