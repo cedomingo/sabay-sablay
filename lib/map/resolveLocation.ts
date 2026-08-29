@@ -114,6 +114,11 @@ export function normalizeRoom(raw: string | null | undefined): NormalizedRoom {
   if (lower in NO_PIN_REASON) {
     return { kind: "no-pin", reason: NO_PIN_REASON[lower] };
   }
+  // Handle "PE TBA", "GYM Arranged" etc. — room strings ending with TBA/Arranged
+  const tbaMatch = lower.match(/\b(tba|arranged)$/);
+  if (tbaMatch) {
+    return { kind: "no-pin", reason: NO_PIN_REASON[tbaMatch[1]] };
+  }
   // Split on whitespace OR hyphen so that room strings like "AECH-Seminar Rm"
   // correctly extract "AECH" as the building code. No crs_codes in the dataset
   // contain hyphens, so this is safe — see up-diliman-places.json.

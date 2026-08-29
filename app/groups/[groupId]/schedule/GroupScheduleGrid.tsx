@@ -24,6 +24,17 @@ function formatHourLabel(minutes: number): string {
   return `${h12}:00 ${period}`;
 }
 
+/** Extract just "TBA" or "Arranged" from room strings like "PE TBA" */
+function getTbaDisplay(room: string | null | undefined): string | null {
+  if (!room) return null;
+  const trimmed = room.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === "tba" || lower === "arranged") return trimmed;
+  const match = lower.match(/\b(tba|arranged)$/);
+  if (match) return match[1].toUpperCase();
+  return null;
+}
+
 // Lays out a single day's blocks on a continuous timeline. Blocks that
 // don't overlap in time each get the full column width; blocks that do
 // overlap (whether from the same person or different people) are
@@ -337,7 +348,7 @@ export default function GroupScheduleGrid({ entries, members }: Props) {
                                 <>
                                   {" · "}
                                   <MapPin size={9} className="inline" />
-                                  {` ${block.room}`}
+                                  {` ${getTbaDisplay(block.room) ?? block.room}`}
                                 </>
                               )}
                             </p>
@@ -371,7 +382,7 @@ export default function GroupScheduleGrid({ entries, members }: Props) {
           {hovered.block.room && (
             <p className="mt-0.5 flex items-center gap-1 text-[10px] text-[#A9D8CA]">
               <MapPin size={9} />
-              {hovered.block.room}
+              {getTbaDisplay(hovered.block.room) ?? hovered.block.room}
             </p>
           )}
           <p className="mt-1 text-[10px] text-[#A9D8CA]">

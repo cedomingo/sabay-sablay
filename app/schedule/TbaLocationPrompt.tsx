@@ -25,6 +25,7 @@
  */
 
 import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, MapPin, Search, X, Check, PinOff } from "lucide-react";
 import placesData from "@/lib/map/data/up-diliman-places.json";
@@ -139,11 +140,12 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
         Set your spot
       </button>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 p-4"
-          onClick={closeModal}
-        >
+      {open &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4"
+            onClick={closeModal}
+          >
           <div
             className="w-full max-w-sm rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-6 shadow-elevated"
             onClick={(e) => e.stopPropagation()}
@@ -237,9 +239,10 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
                 {saving === "dismiss" ? "Dismissing…" : "Not now, stop asking about this class"}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+            </div>
+          </div>,
+          document.body
+        )}
 
       <PlacePickerModal
         open={pickerOpen}

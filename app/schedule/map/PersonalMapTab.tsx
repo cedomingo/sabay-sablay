@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
-import { MapPin, Clock, X, Radio, AlertTriangle } from "lucide-react";
+import {
+  MapPin,
+  Clock,
+  X,
+  Radio,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import type { ScheduleEntry } from "../page";
 import {
   resolveEntryLocation,
@@ -38,9 +46,15 @@ interface Props {
 }
 
 /** Where a resolved location plots on the map, if at all. */
-function getPinCoords(location: LocationResult): { lat: number; lng: number; label: string } | null {
+function getPinCoords(
+  location: LocationResult
+): { lat: number; lng: number; label: string } | null {
   if (location.state === "in-class") {
-    return { lat: location.place.lat, lng: location.place.lng, label: location.place.name };
+    return {
+      lat: location.place.lat,
+      lng: location.place.lng,
+      label: location.place.name,
+    };
   }
   if (location.state === "in-class-custom-pin") {
     return { lat: location.lat, lng: location.lng, label: location.label };
@@ -67,6 +81,17 @@ function describeLocation(location: LocationResult): {
   }
 }
 
+/** Extract just "TBA" or "Arranged" from room strings like "PE TBA" */
+function getTbaDisplay(room: string | null | undefined): string | null {
+  if (!room) return null;
+  const trimmed = room.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === "tba" || lower === "arranged") return trimmed;
+  const match = lower.match(/\b(tba|arranged)$/);
+  if (match) return match[1].toUpperCase();
+  return null;
+}
+
 /** Build a Leaflet divIcon for a subject-colored pin marker. */
 function buildMarkerHtml(
   color: { hex: string; border: string },
@@ -91,6 +116,39 @@ function buildMarkerHtml(
     </div>${badge}</div>`;
 }
 
+// ---------------------------------------------------------------------------
+// Sidebar types
+// ---------------------------------------------------------------------------
+
+interface CourseGroup {
+  subject: string;
+  number: string;
+  entries: ScheduleEntry[];
+  resolvedEntries: ResolvedEntry[];
+  hasActive: boolean;
+  color: { hex: string; border: string } | undefined;
+}
+
+interface BuildingGroup {
+  label: string;
+  tone: "pinned" | "off" | "unresolved";
+  lat: number;
+  lng: number;
+  courses: CourseGroup[];
+  hasActive: boolean;
+  color: { hex: string; border: string } | undefined;
+}
+
+interface ResolvedEntry {
+  entry: ScheduleEntry;
+  location: LocationResult;
+  color: { hex: string; border: string } | undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export default function PersonalMapTab({ entries, overrides }: Props) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
@@ -106,7 +164,7 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
     return () => clearInterval(id);
   }, []);
 
-  // Deduplicate entries by id (in case DB returns duplicate rows)
+  // Deduplicate entries by id
   const uniqueEntries = useMemo(() => {
     const seen = new Set<string>();
     return entries.filter((e) => {
@@ -118,26 +176,32 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
 
   // Map entries to ScheduleEntryLike shape for resolveEntryLocation
   const entriesLike = useMemo(() => {
-    return uniqueEntries.map((e): ScheduleEntryLike => ({
-      id: e.id,
-      day: e.day,
-      start_minutes: e.start_minutes,
-      end_minutes: e.end_minutes,
-      room: e.room,
-    }));
+    return uniqueEntries.map(
+      (e): ScheduleEntryLike => ({
+        id: e.id,
+        day: e.day,
+        start_minutes: e.start_minutes,
+        end_minutes: e.end_minutes,
+        room: e.room,
+      })
+    );
   }, [uniqueEntries]);
 
   // Resolve every entry's location
-  const resolved = useMemo(() => {
-    const subjectColorMap = buildSubjectColorMap(
-      [...new Set(uniqueEntries.map((e) => e.subject))]
-    );
+  const resolved: ResolvedEntry[] = useMemo(() => {
+    const subjectColorMap = buildSubjectColorMap([
+      ...new Set(uniqueEntries.map((e) => e.subject)),
+    ]);
 
     return uniqueEntries
       .filter((e) => !e.hidden)
       .map((entry) => {
         const entryLike = entriesLike.find((el) => el.id === entry.id)!;
-        const location = resolveEntryLocation({ entry: entryLike, places, overrides });
+        const location = resolveEntryLocation({
+          entry: entryLike,
+          places,
+          overrides,
+        });
         const color = subjectColorMap.get(entry.subject);
         return { entry, location, color };
       });
@@ -151,7 +215,12 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
 
   // Cluster pinned entries by coordinate, then shingle
   const pinned = useMemo(() => {
-    const buckets = new Map<string, Array<(typeof resolved)[number] & { lat: number; lng: number; label: string }>>();
+    const buckets = new Map<
+      string,
+      Array<
+        ResolvedEntry & { lat: number; lng: number; label: string }
+      >
+    >();
     for (const r of resolved) {
       const coords = getPinCoords(r.location);
       if (!coords) continue;
@@ -240,12 +309,16 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
         const isActive = p.entry.id === activeEntryId;
         const color = p.color ?? { hex: "#F4A28C", border: "#DC7C66" };
         const isFrontOfStack = p.stackIndex === p.stackSize - 1;
-        const scale = Math.max(STACK_MIN_SCALE, 1 - p.stackIndex * STACK_SCALE_STEP);
+        const scale = Math.max(
+          STACK_MIN_SCALE,
+          1 - p.stackIndex * STACK_SCALE_STEP
+        );
         const icon = L.divIcon({
           className: "",
           html: buildMarkerHtml(color, isActive, {
             scale,
-            badgeCount: isFrontOfStack && p.stackSize > 1 ? p.stackSize : undefined,
+            badgeCount:
+              isFrontOfStack && p.stackSize > 1 ? p.stackSize : undefined,
           }),
           iconSize: [34, 34],
           iconAnchor: [17, 17],
@@ -263,33 +336,75 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
     };
   }, [pinned, leafletReady, activeEntryId]);
 
-  // Group resolved entries by building label for the sidebar
-  const buildingGroups = useMemo(() => {
-    const groups = new Map<string, {
-      label: string;
-      tone: "pinned" | "off" | "unresolved";
-      entries: typeof resolved;
-      hasActive: boolean;
-      firstEntry: typeof resolved[number];
-    }>();
+  // Fly-to helper — pans/zooms the map to a coordinate
+  const flyTo = useCallback((lat: number, lng: number) => {
+    if (!mapRef.current) return;
+    const center = mapRef.current.getCenter();
+    const currentZoom = mapRef.current.getZoom();
+    const distance = center.distanceTo({ lat, lng });
+    const zoomDiff = Math.abs(currentZoom - 17);
+    if (distance < 50 && zoomDiff < 0.5) return;
+    mapRef.current.flyTo([lat, lng], 17, { duration: 0.8 });
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // Two-level sidebar grouping: Building > Course (subject+number) > entries
+  // Same building + same subject+number = 1 course, even with different rooms.
+  // -------------------------------------------------------------------------
+  const buildingGroups: BuildingGroup[] = useMemo(() => {
+    const buildingMap = new Map<string, BuildingGroup>();
     for (const r of resolved) {
       const { label, tone } = describeLocation(r.location);
-      const existing = groups.get(label);
-      if (existing) {
-        existing.entries.push(r);
-        if (r.entry.id === activeEntryId) existing.hasActive = true;
-      } else {
-        groups.set(label, {
+      const coords = getPinCoords(r.location);
+      let building = buildingMap.get(label);
+      if (!building) {
+        building = {
           label,
           tone,
-          entries: [r],
-          hasActive: r.entry.id === activeEntryId,
-          firstEntry: r,
-        });
+          lat: coords?.lat ?? 0,
+          lng: coords?.lng ?? 0,
+          courses: [],
+          hasActive: false,
+          color: r.color,
+        };
+        buildingMap.set(label, building);
       }
+      if (r.entry.id === activeEntryId) building.hasActive = true;
+
+      // Within a building, group by subject+number (course identity)
+      let course = building.courses.find(
+        (c) =>
+          c.subject === r.entry.subject && c.number === r.entry.number
+      );
+      if (!course) {
+        course = {
+          subject: r.entry.subject,
+          number: r.entry.number,
+          entries: [],
+          resolvedEntries: [],
+          hasActive: false,
+          color: r.color,
+        };
+        building.courses.push(course);
+      }
+      course.entries.push(r.entry);
+      course.resolvedEntries.push(r);
+      if (r.entry.id === activeEntryId) course.hasActive = true;
     }
-    return [...groups.values()];
+    return [...buildingMap.values()];
   }, [resolved, activeEntryId]);
+
+  const [expandedBuildings, setExpandedBuildings] = useState<Set<string>>(
+    new Set()
+  );
+  const toggleBuilding = useCallback((label: string) => {
+    setExpandedBuildings((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }, []);
 
   const selected = selectedEntryId
     ? resolved.find((r) => r.entry.id === selectedEntryId) ?? null
@@ -300,7 +415,8 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
       {usingFallbackTiles && (
         <p className="rounded-xl border border-[#DDB35A]/40 bg-[#FBF2D9] px-3 py-2 text-xs text-[#4C3911]">
           Using OpenStreetMap&apos;s public tiles for local development. Set{" "}
-          <code className="font-mono">NEXT_PUBLIC_MAPTILER_KEY</code> before deploying.
+          <code className="font-mono">NEXT_PUBLIC_MAPTILER_KEY</code> before
+          deploying.
         </p>
       )}
 
@@ -314,7 +430,10 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
         <div className="relative overflow-hidden rounded-[22px] border border-[#D0CEC4] shadow-card">
-          <div ref={mapContainerRef} className="h-[420px] w-full md:h-[520px]" />
+          <div
+            ref={mapContainerRef}
+            className="h-[420px] w-full md:h-[520px]"
+          />
           {!leafletReady && (
             <div className="absolute inset-0 grid place-items-center bg-[#F8F6F0]">
               <p className="text-xs text-[#87908A]">Loading map…</p>
@@ -332,63 +451,164 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
           )}
         </div>
 
-        <div className="rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-4">
+        {/* Sidebar */}
+        <div className="max-h-[520px] overflow-y-auto rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-4">
           <div className="flex items-center gap-2">
             <MapPin size={14} className="text-[#A991D1]" />
             <p className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
               All classes
             </p>
           </div>
-          <div className="mt-3 space-y-1.5">
-            {buildingGroups.map((group) => {
-              const pinColor = group.firstEntry.color ?? { hex: "#F4A28C", border: "#DC7C66" };
-              const classCount = group.entries.length;
+          <div className="mt-3 space-y-1">
+            {buildingGroups.map((building) => {
+              const isExpanded = expandedBuildings.has(building.label);
+              const totalEntries = building.courses.reduce(
+                (n, c) => n + c.entries.length,
+                0
+              );
+              const pinColor = building.color ?? {
+                hex: "#F4A28C",
+                border: "#DC7C66",
+              };
               return (
-                <button
-                  key={group.label}
-                  type="button"
-                  onClick={() => setSelectedEntryId(group.firstEntry.entry.id)}
-                  className={`flex w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left transition-colors ${
-                    group.entries.some((e) => e.entry.id === selectedEntryId)
-                      ? "border-[#214746] bg-white"
-                      : "border-transparent hover:bg-white/60"
-                  }`}
-                >
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ background: pinColor.hex, border: `1.5px solid ${pinColor.border}` }}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-semibold text-[#214746]">
-                      {group.label}
-                      {group.hasActive && (
-                        <span className="ml-1 rounded-full bg-[#D9E7DE] px-1.5 py-0.5 text-[9px] font-bold text-[#286057]">
-                          NOW
-                        </span>
-                      )}
-                    </span>
-                    <span
-                      className={`mt-0.5 flex items-center gap-1 truncate text-[11px] ${
-                        group.tone === "pinned"
-                          ? "text-[#286057]"
-                          : group.tone === "unresolved"
-                          ? "text-[#8A6A1F]"
-                          : "text-[#87908A]"
-                      }`}
+                <div key={building.label} className="rounded-xl">
+                  {/* Building header — expand/collapse + pan */}
+                  <div className="flex items-start gap-1">
+                    <button
+                      type="button"
+                      onClick={() => toggleBuilding(building.label)}
+                      className="mt-0.5 shrink-0 grid h-6 w-6 place-items-center rounded-lg text-[#87908A] hover:bg-white/60"
                     >
-                      {group.tone === "pinned" && <MapPin size={10} className="shrink-0" />}
-                      {group.tone === "unresolved" && <AlertTriangle size={10} className="shrink-0" />}
-                      {group.tone === "off" && <Radio size={10} className="shrink-0" />}
-                      {classCount === 1
-                        ? group.entries[0].entry.subject + " " + group.entries[0].entry.number
-                        : `${classCount} classes`}
-                    </span>
-                  </span>
-                </button>
+                      {isExpanded ? (
+                        <ChevronDown size={14} />
+                      ) : (
+                        <ChevronRight size={14} />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (building.tone === "pinned")
+                          flyTo(building.lat, building.lng);
+                      }}
+                      className="min-w-0 flex-1 py-1 text-left"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{
+                            background: pinColor.hex,
+                            border: `1.5px solid ${pinColor.border}`,
+                          }}
+                        />
+                        <span className="truncate text-xs font-semibold text-[#214746]">
+                          {building.label}
+                          {building.hasActive && (
+                            <span className="ml-1 rounded-full bg-[#D9E7DE] px-1.5 py-0.5 text-[9px] font-bold text-[#286057]">
+                              NOW
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                      <span className="ml-[22px] block text-[10px] text-[#87908A]">
+                        {building.courses.length}{" "}
+                        {building.courses.length === 1
+                          ? "course"
+                          : "courses"}{" "}
+                        · {totalEntries}{" "}
+                        {totalEntries === 1 ? "class" : "classes"}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Expanded: courses under this building */}
+                  {isExpanded && (
+                    <div className="ml-4 mt-0.5 space-y-1 border-l border-[#D8D6CD] pl-3">
+                      {building.courses.map((course) => {
+                        const courseColor = course.color ?? {
+                          hex: "#F4A28C",
+                          border: "#DC7C66",
+                        };
+                        return (
+                          <div
+                            key={`${course.subject}|${course.number}`}
+                          >
+                            {/* Course header */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (building.tone === "pinned")
+                                  flyTo(building.lat, building.lng);
+                                setSelectedEntryId(
+                                  course.entries[0].id
+                                );
+                              }}
+                              className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left hover:bg-white/60"
+                            >
+                              <span
+                                className="h-2 w-2 shrink-0 rounded-full"
+                                style={{
+                                  background: courseColor.hex,
+                                  border: `1px solid ${courseColor.border}`,
+                                }}
+                              />
+                              <span className="truncate text-[11px] font-semibold text-[#214746]">
+                                {course.subject} {course.number}
+                                {course.hasActive && (
+                                  <span className="ml-1 rounded-full bg-[#D9E7DE] px-1 py-px text-[8px] font-bold text-[#286057]">
+                                    NOW
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                            {/* Individual schedule entries */}
+                            <div className="ml-4 space-y-0.5">
+                              {course.resolvedEntries.map((r) => (
+                                <button
+                                  key={r.entry.id}
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedEntryId(r.entry.id)
+                                  }
+                                  className={`flex w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-left text-[10px] hover:bg-white/60 ${
+                                    selectedEntryId === r.entry.id
+                                      ? "bg-white font-semibold text-[#214746]"
+                                      : "text-[#717972]"
+                                  }`}
+                                >
+                                  <span>{r.entry.day}</span>
+                                  <span className="text-[#B9BDB4]">
+                                    ·
+                                  </span>
+                                  <span>
+                                    {r.entry.start_display}–
+                                    {r.entry.end_display}
+                                  </span>
+                                  {r.entry.room && (
+                                    <>
+                                      <span className="text-[#B9BDB4]">
+                                        ·
+                                      </span>
+                                      <span className="truncate text-[#87908A]">
+                                        {getTbaDisplay(r.entry.room) ?? r.entry.room}
+                                      </span>
+                                    </>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
             {buildingGroups.length === 0 && (
-              <p className="px-1 py-2 text-xs text-[#87908A]">No classes to show yet.</p>
+              <p className="px-1 py-2 text-xs text-[#87908A]">
+                No classes to show yet.
+              </p>
             )}
           </div>
         </div>
@@ -419,12 +639,18 @@ function SelectedInfoPanel({
           <p className="truncate text-sm font-semibold text-[#214746]">
             {entry.subject} {entry.number}
             {entry.section && (
-              <span className="ml-1 text-xs font-normal text-[#87908A]">{entry.section}</span>
+              <span className="ml-1 text-xs font-normal text-[#87908A]">
+                {entry.section}
+              </span>
             )}
           </p>
           <p
             className={`mt-0.5 flex items-center gap-1 text-xs ${
-              tone === "pinned" ? "text-[#286057]" : tone === "unresolved" ? "text-[#8A6A1F]" : "text-[#87908A]"
+              tone === "pinned"
+                ? "text-[#286057]"
+                : tone === "unresolved"
+                  ? "text-[#8A6A1F]"
+                  : "text-[#87908A]"
             }`}
           >
             <MapPin size={11} />
@@ -445,10 +671,14 @@ function SelectedInfoPanel({
           <p className="flex items-start gap-2 text-xs text-[#8A6A1F]">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" />
             <span>
-              Your building seems to be missing on our map. Please help us add it!
+              Your building seems to be missing on our map. Please help us
+              add it!
             </span>
           </p>
-          <BuildingSubmissionPrompt rawRoom={location.rawRoom} isOwnLocation={true} />
+          <BuildingSubmissionPrompt
+            rawRoom={location.rawRoom}
+            isOwnLocation={true}
+          />
         </div>
       )}
 
@@ -465,11 +695,9 @@ function SelectedInfoPanel({
           {entry.start_display}–{entry.end_display}
         </p>
         <p className="mt-1 text-xs text-[#717972]">
-          Room: {entry.room && entry.room.trim() ? entry.room : "—"}
+          Room: {entry.room && entry.room.trim() ? (getTbaDisplay(entry.room) ?? entry.room) : "—"}
         </p>
-        <p className="mt-1 text-xs text-[#87908A]">
-          {entry.day}
-        </p>
+        <p className="mt-1 text-xs text-[#87908A]">{entry.day}</p>
       </div>
     </div>
   );

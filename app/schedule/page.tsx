@@ -14,6 +14,17 @@ import AppHeader from "@/components/AppHeader";
 import { SUBJECT_COLORS, buildSubjectColorMap } from "@/lib/map/subjectColors";
 import PersonalMapTab from "./map/PersonalMapTab";
 
+/** Extract just "TBA" or "Arranged" from room strings like "PE TBA" */
+function getTbaDisplay(room: string | null | undefined): string | null {
+  if (!room) return null;
+  const trimmed = room.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === "tba" || lower === "arranged") return trimmed;
+  const match = lower.match(/\b(tba|arranged)$/);
+  if (match) return match[1].toUpperCase();
+  return null;
+}
+
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
 // Timeline starts at 7:00 AM (420 minutes since midnight).
@@ -340,7 +351,7 @@ export default async function SchedulePage({
                             {entry.room && (
                               <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-[#87908A]">
                                 <MapPin size={9} />
-                                {entry.room}
+                                {getTbaDisplay(entry.room) ?? entry.room}
                               </p>
                             )}
                             {schedule.tbaPromptEntryIds.has(entry.id) && (
@@ -488,7 +499,7 @@ export default async function SchedulePage({
                               {entry.room && (
                                 <p className="mt-1 flex items-center gap-1 font-mono text-[9px] opacity-75">
                                   <MapPin size={9} />
-                                  {entry.room}
+                                  {getTbaDisplay(entry.room) ?? entry.room}
                                 </p>
                               )}
                               {schedule.tbaPromptEntryIds.has(entry.id) && (

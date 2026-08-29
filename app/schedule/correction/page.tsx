@@ -34,6 +34,17 @@ interface EnrichedEntry extends ParsedEntry {
   needs_review: boolean;
 }
 
+/** Extract just "TBA" or "Arranged" from room strings like "PE TBA" */
+function getTbaDisplay(room: string | null | undefined): string | null {
+  if (!room) return null;
+  const trimmed = room.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === "tba" || lower === "arranged") return trimmed;
+  const match = lower.match(/\b(tba|arranged)$/);
+  if (match) return match[1].toUpperCase();
+  return null;
+}
+
 /** Builds the key groupOcrEntries()/matchServer use to identify a class:
  *  the raw OCR course text, whitespace/case normalized. Matching removal
  *  and dedup logic against this (not the split subject/number/section
@@ -771,7 +782,7 @@ export default function CorrectionPage() {
                               <div className="flex items-center gap-2">
                                 {entry.room ? (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-[#D9E7DE] px-2 py-0.5 text-xs font-semibold text-[#286057]">
-                                    {entry.room}
+                                    {getTbaDisplay(entry.room) ?? entry.room}
                                   </span>
                                 ) : null}
                                 <button

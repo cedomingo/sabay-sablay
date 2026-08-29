@@ -26,6 +26,17 @@ import {
 
 const places = placesData as Place[];
 
+/** Extract just "TBA" or "Arranged" from room strings like "PE TBA" */
+function getTbaDisplay(room: string | null | undefined): string | null {
+  if (!room) return null;
+  const trimmed = room.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower === "tba" || lower === "arranged") return trimmed;
+  const match = lower.match(/\b(tba|arranged)$/);
+  if (match) return match[1].toUpperCase();
+  return null;
+}
+
 // Client-side recompute only (build plan Phase 2) — no new backend calls,
 // just re-running resolveLocation against data we already fetched.
 const RECOMPUTE_INTERVAL_MS = 45_000;
@@ -481,7 +492,7 @@ function SelectedInfoPanel({
               {activeDetail.start_display}–{activeDetail.end_display}
             </p>
             <p className="mt-1 text-xs text-[#717972]">
-              Room: {activeDetail.room && activeDetail.room.trim() ? activeDetail.room : "—"}
+              Room: {activeDetail.room && activeDetail.room.trim() ? (getTbaDisplay(activeDetail.room) ?? activeDetail.room) : "—"}
             </p>
           </>
         ) : (

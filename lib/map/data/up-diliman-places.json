@@ -241,7 +241,7 @@
     ]
   },
   {
-    "name": "Abelardo Hall",
+    "name": "Abelardo Hall (AH)",
     "lat": 14.657102,
     "lng": 121.065447,
     "category": "academic",
@@ -250,7 +250,7 @@
     ]
   },
   {
-    "name": "Lagmay Hall",
+    "name": "Lagmay Hall (LH)",
     "lat": 14.653557,
     "lng": 121.071311,
     "category": "academic",
@@ -356,16 +356,16 @@
     ]
   },
   {
-    "name": "Palma Hall",
+    "name": "Palma Hall (PH)",
     "lat": 14.653177,
     "lng": 121.069675,
     "category": "academic",
     "crs_codes": [
-      "PH"
+      "PH","AS"
     ]
   },
   {
-    "name": "College of Human Kinetics",
+    "name": "College of Human Kinetics (CHK)",
     "lat": 14.659217,
     "lng": 121.062863,
     "category": "academic",
