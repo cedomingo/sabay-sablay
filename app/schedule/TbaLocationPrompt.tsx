@@ -143,10 +143,9 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
           setOpen(true);
         }}
         className="mt-0.5 md:mt-1 flex items-center gap-1 font-mono text-[10px] md:text-[9px] text-[#87908A] opacity-75 hover:opacity-100 hover:text-[#286057] transition-colors cursor-pointer"
-        title="This class's room is TBA — where will you actually be?"
       >
-        <MapPin size={9} />
-        Set your spot
+        <AlertTriangle size={9} />
+        TBA
       </button>
 
       {open &&
@@ -252,7 +251,7 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
               disabled={!!saving}
               className="mt-3 w-full text-center text-xs font-semibold text-[#286057] underline decoration-dotted underline-offset-2 hover:text-[#214746] disabled:opacity-60"
             >
-              Can&apos;t find your building on the list? Pin it on the map!
+              Can't find your building on the list? Pin it on the map!
             </button>
 
             <div className="mt-4 border-t border-[#E1DFD7] pt-3 text-center">
