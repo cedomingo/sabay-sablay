@@ -123,6 +123,7 @@ export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
     // Phase 5's shared PlacePickerModal, opened with this entry's id so a
     // submitted pin also becomes its location override right away — see
     // PHASE-5-README.md §3.
+    setOpen(false);
     setPickerOpen(true);
   }
 

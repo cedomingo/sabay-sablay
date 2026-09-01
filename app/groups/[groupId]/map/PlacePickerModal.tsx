@@ -35,6 +35,7 @@ import {
   CAMPUS_DEFAULT_ZOOM,
 } from "@/lib/map/tileConfig";
 import { submitCandidatePlace } from "@/lib/actions/candidate-place-submissions";
+import PinIcon from "@/lib/map/Pin.png";
 
 export interface PlacePickerModalProps {
   open: boolean;
@@ -113,10 +114,19 @@ export default function PlacePickerModal({
     (async () => {
       const L = (await import("leaflet")).default;
       if (cancelled || !mapRef.current) return;
+
+      // Custom pin icon using the local Pin.png
+      const pinIcon = L.icon({
+        iconUrl: PinIcon.src,
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32],
+      });
+
       if (markerRef.current) {
         markerRef.current.setLatLng([pin.lat, pin.lng]);
       } else {
-        const marker = L.marker([pin.lat, pin.lng], { draggable: true }).addTo(mapRef.current);
+        const marker = L.marker([pin.lat, pin.lng], { draggable: true, icon: pinIcon }).addTo(mapRef.current);
         marker.on("dragend", () => {
           const ll = marker.getLatLng();
           setPin({ lat: ll.lat, lng: ll.lng });
@@ -168,7 +178,7 @@ export default function PlacePickerModal({
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-black/30 p-4"
+      className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/30 p-4"
       onClick={handleClose}
     >
       <div

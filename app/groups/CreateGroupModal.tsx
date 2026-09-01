@@ -1,17 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Plus, X, Check, Users } from "lucide-react";
-import { createGroup } from "@/lib/actions/group";
 
 interface CreateGroupModalProps {
   /** "button" renders the compact header pill; "empty-state" renders the larger CTA used on the empty /groups screen; "icon" renders a small icon button. */
   variant?: "button" | "empty-state" | "icon";
+  onGroupCreated?: ({ name, description }: { name: string; description?: string }) => Promise<void>;
 }
 
-export default function CreateGroupModal({ variant = "button" }: CreateGroupModalProps) {
-  const router = useRouter();
+export default function CreateGroupModal({ variant = "button", onGroupCreated }: CreateGroupModalProps) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -38,17 +36,15 @@ export default function CreateGroupModal({ variant = "button" }: CreateGroupModa
       return;
     }
 
+    if (!onGroupCreated) return;
+
     setLoading(true);
     setError(null);
 
     try {
-      const result = await createGroup({
-        name: name.trim(),
-        description: description.trim() || undefined,
-      });
+      await onGroupCreated({ name: name.trim(), description: description.trim() || undefined });
       setOpen(false);
       reset();
-      router.push(`/groups/${result.groupId}?created=1`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create group");
     } finally {

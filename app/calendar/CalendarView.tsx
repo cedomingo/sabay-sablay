@@ -215,6 +215,7 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartKey, setDragStartKey] = useState<string | null>(null);
   const [dragCurrentKey, setDragCurrentKey] = useState<string | null>(null);
+  const cellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // ---- Bar hover tooltip ----
   const [tooltip, setTooltip] = useState<{
@@ -314,18 +315,47 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
     }
 
     window.addEventListener("pointerup", finish);
-    return () => window.removeEventListener("pointerup", finish);
+    window.addEventListener("touchend", finish, { passive: true });
+    return () => {
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("touchend", finish);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging, dragStartKey, dragCurrentKey]);
 
-  function handleCellPointerDown(key: string) {
+  // Track pointer/touch move to update dragCurrentKey on mobile
+  useEffect(() => {
+    if (!isDragging) return;
+
+    function handleMove(e: PointerEvent | TouchEvent) {
+      const clientX = "touches" in e ? e.touches[0]?.clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0]?.clientY : e.clientY;
+      if (clientX == null || clientY == null) return;
+
+      const el = document.elementFromPoint(clientX, clientY);
+      if (!el) return;
+
+      // Find the nearest cell with a data-date-key attribute
+      const cell = el.closest("[data-date-key]") as HTMLElement | null;
+      if (cell) {
+        const key = cell.dataset.dateKey;
+        if (key) setDragCurrentKey(key);
+      }
+    }
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("touchmove", handleMove, { passive: true });
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("touchmove", handleMove);
+    };
+  }, [isDragging]);
+
+  function handleCellPointerDown(key: string, e: React.PointerEvent | React.TouchEvent) {
+    // Prevent default to avoid text selection during drag
+    if ("preventDefault" in e) e.preventDefault();
     setIsDragging(true);
     setDragStartKey(key);
-    setDragCurrentKey(key);
-  }
-
-  function handleCellPointerEnter(key: string) {
-    if (!isDragging) return;
     setDragCurrentKey(key);
   }
 
@@ -596,7 +626,7 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
           ))}
         </div>
 
-        <div style={{ touchAction: isDragging ? "none" : "pan-y" }}>
+        <div>
           {weeks.map((week, wi) => {
             const weekKeys = week.map(dateKey);
             const { segments, laneCount } = computeWeekSegments(
@@ -628,10 +658,11 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                     return (
                       <div
                         key={key}
+                        data-date-key={key}
                         role="button"
                         tabIndex={0}
-                        onPointerDown={() => handleCellPointerDown(key)}
-                        onPointerEnter={() => handleCellPointerEnter(key)}
+                        onPointerDown={(e) => handleCellPointerDown(key, e)}
+                        onTouchStart={(e) => handleCellPointerDown(key, e)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
@@ -643,6 +674,7 @@ export default function CalendarView({ initialTasks, groupId }: CalendarViewProp
                         } ${isCurrentMonth ? "" : "opacity-40"} ${
                           isDragTarget ? "bg-[#DCEEE8]" : ""
                         } ${isToday && !isDragTarget ? "bg-[#EFF6F3]" : ""}`}
+                        style={{ touchAction: isDragging ? "none" : "pan-y" }}
                       >
                         <span
                           className={`self-start rounded-full px-1.5 py-0.5 text-xs font-semibold ${
