@@ -253,6 +253,7 @@ export default function MapTab({ members, entries, overrides, currentUserId }: P
       const map = L.map(mapContainerRef.current, {
         center: CAMPUS_CENTER,
         zoom: CAMPUS_DEFAULT_ZOOM,
+        attributionControl: false,
       });
       L.tileLayer(TILE_URL, {
         attribution: TILE_ATTRIBUTION,

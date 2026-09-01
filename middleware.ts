@@ -24,14 +24,24 @@ export async function middleware(request: NextRequest) {
           response = NextResponse.next({
             request: { headers: request.headers },
           });
-          response.cookies.set({ name, value, ...options });
+          response.cookies.set({
+            name,
+            value,
+            ...options,
+            maxAge: 60 * 60 * 24 * 30, // 30 days
+          });
         },
         remove(name: string, options: CookieOptions) {
           request.cookies.set({ name, value: "", ...options });
           response = NextResponse.next({
             request: { headers: request.headers },
           });
-          response.cookies.set({ name, value: "", ...options });
+          response.cookies.set({
+            name,
+            value: "",
+            ...options,
+            maxAge: 0,
+          });
         },
       },
     }
