@@ -471,20 +471,14 @@ export default async function SchedulePage({
                           />
                         ))}
 
-                        {dayEntries.map((entry) => {
-                          const color = subjectColorMap.get(entry.subject) || SUBJECT_COLORS[0];
-                          const top = (entry.start_minutes - HOUR_START) * PIXELS_PER_MINUTE;
-                          // Blocks needing the "Set your spot" chip (title +
-                          // time + room + chip, four stacked lines) need more
-                          // room than a short class would otherwise get, or
-                          // the chip gets clipped by this block's
-                          // overflow-hidden — see the Math-23-TBA report.
-                          const needsTbaChip = schedule.tbaPromptEntryIds.has(entry.id);
-                          const height = Math.max(
-                            (entry.end_minutes - entry.start_minutes) * PIXELS_PER_MINUTE,
-                            needsTbaChip ? 88 : 22
-                          );
-                          const gap = 4;
+{dayEntries.map((entry) => {
+                            const color = subjectColorMap.get(entry.subject) || SUBJECT_COLORS[0];
+                            const top = (entry.start_minutes - HOUR_START) * PIXELS_PER_MINUTE;
+                            const height = Math.max(
+                              (entry.end_minutes - entry.start_minutes) * PIXELS_PER_MINUTE,
+                              22
+                            );
+                            const gap = 4;
                           const leftPct = (entry.col / entry.colCount) * 100;
                           const widthPct = 100 / entry.colCount;
 
