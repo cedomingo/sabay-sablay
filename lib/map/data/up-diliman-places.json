@@ -207,11 +207,12 @@
     "category": "academic",
     "crs_codes": [
       "ALON",
-      "CHE",
       "HRIM",
       "HRIML",
-      "IDS"
-    ]
+      "IDS",
+      "CHE"
+    ],
+    "note": "CHE = College of Home Economics (confirmed by user), not Chemical Engineering -- Alonso Hall itself is noted as College of Home Economics in the source map. An earlier session mistakenly moved CHE to a ChemEng building based on an unverified guess; reverted."
   },
   {
     "name": "Child Development Center",
@@ -361,7 +362,8 @@
     "lng": 121.069675,
     "category": "academic",
     "crs_codes": [
-      "PH","AS"
+      "PH",
+      "AS"
     ]
   },
   {
@@ -375,5 +377,15 @@
       "V204B",
       "V210"
     ]
+  },
+  {
+    "name": "Electrical and Electronics Engineering Institute (EEEI)",
+    "lat": 14.649555,
+    "lng": 121.06831299999999,
+    "category": "academic",
+    "crs_codes": [
+      "EEEI"
+    ],
+    "note": "NEWLY ADDED this session. Two separate buildings exist in source map (Building 1 & 2); used midpoint since CRS room codes (EEEI 120, EEEI VLC, etc.) don't distinguish which building. Needs manual check to see if room-number ranges indicate which of the two buildings."
   }
 ]
