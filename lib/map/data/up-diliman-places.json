@@ -385,7 +385,6 @@
     "category": "academic",
     "crs_codes": [
       "EEEI"
-    ],
-    "note": "NEWLY ADDED this session. Two separate buildings exist in source map (Building 1 & 2); used midpoint since CRS room codes (EEEI 120, EEEI VLC, etc.) don't distinguish which building. Needs manual check to see if room-number ranges indicate which of the two buildings."
+    ]
   }
 ]
