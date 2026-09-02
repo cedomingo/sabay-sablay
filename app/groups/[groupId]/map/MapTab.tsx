@@ -335,14 +335,6 @@ export default function MapTab({ members, entries, overrides, currentUserId }: P
 
   return (
     <div className="space-y-4">
-      {usingFallbackTiles && (
-        <p className="rounded-xl border border-[#DDB35A]/40 bg-[#FBF2D9] px-3 py-2 text-xs text-[#4C3911]">
-          Using OpenStreetMap&apos;s public tiles for local development. Set{" "}
-          <code className="font-mono">NEXT_PUBLIC_MAPTILER_KEY</code> before deploying — see{" "}
-          <code className="font-mono">lib/map/tileConfig.ts</code>.
-        </p>
-      )}
-
       <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
         <div className="relative overflow-hidden rounded-[22px] border border-[#D0CEC4] shadow-card">
           <div ref={mapContainerRef} className="h-[420px] w-full md:h-[520px]" />

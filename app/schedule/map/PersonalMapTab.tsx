@@ -453,14 +453,6 @@ export default function PersonalMapTab({ entries, overrides }: Props) {
 
   return (
     <div className="space-y-4">
-      {usingFallbackTiles && (
-        <p className="rounded-xl border border-[#DDB35A]/40 bg-[#FBF2D9] px-3 py-2 text-xs text-[#4C3911]">
-          Using OpenStreetMap&apos;s public tiles for local development. Set{" "}
-          <code className="font-mono">NEXT_PUBLIC_MAPTILER_KEY</code> before
-          deploying.
-        </p>
-      )}
-
       {/* Pulse animation keyframes */}
       <style>{`
         @keyframes pulse-ring {

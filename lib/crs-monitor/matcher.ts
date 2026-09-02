@@ -432,7 +432,7 @@ export function expandParsedBlocks(blocks: CrsParsedBlock[]): ExpandedDayRow[] {
  * before the actual room, extend this list rather than special-casing it
  * at a call site.
  */
-export const SESSION_TYPE_KEYWORDS = ["lec", "lab"];
+export const SESSION_TYPE_KEYWORDS = ["lec", "lab", "disc"];
 
 /** Matches a segment's leading day-token + time-range, e.g. "Th 7-8AM" or
  *  "WF 7-8:30AM" — the exact prefix shape parseScheduleText()'s own segment
