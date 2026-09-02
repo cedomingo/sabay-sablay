@@ -142,15 +142,17 @@ function EntryCorrectionRow({ entry }: { entry: CorrectableEntry }) {
       </div>
 
       <div className="mt-1.5 flex items-center gap-1.5">
-        <MapPin size={12} className="shrink-0 text-[#87908A]" />
         <InlineEditableField
           entryId={entry.id}
           field="room"
           value={entry.room ?? ""}
           placeholder="Room/building — e.g. MB 304, CAL 512"
           display={(v) => (
-            <span className="font-mono text-xs text-[#52605C]">
-              {v || "No room set — click to add one"}
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-[#D8D6CD] bg-white px-3 py-1.5 text-left hover:bg-[#F4F1E9] transition-colors group">
+              <MapPin size={12} className="shrink-0 text-[#87908A]" />
+              <span className="font-mono text-xs text-[#52605C]">
+                {v || "No room set — click to add one"}
+              </span>
             </span>
           )}
         />

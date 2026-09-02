@@ -1,12 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { MapPin, Users as UsersIcon } from "lucide-react";
 // One fixed color per person, cycling if there are more members than
 // swatches, deterministically hashed from user_id. Lives in
 // lib/map/personColors.ts (Map feature Phase 2) so the Map tab's avatar
 // pins share the exact same per-person color as this grid.
 import { getColorForPerson } from "@/lib/map/personColors";
+import { normalizeRoom } from "@/lib/map/resolveLocation";
+
+interface LocationOverride {
+  scheduleEntryId: string;
+  isAsync: boolean;
+}
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -114,6 +120,7 @@ interface Member {
 interface Props {
   entries: MemberEntry[];
   members: Member[];
+  locationOverrides?: LocationOverride[];
 }
 
 interface Block {
@@ -138,24 +145,36 @@ interface HoveredBlock {
   y: number;
 }
 
-export default function GroupScheduleGrid({ entries, members }: Props) {
+export default function GroupScheduleGrid({ entries, members, locationOverrides = [] }: Props) {
   const [hovered, setHovered] = useState<HoveredBlock | null>(null);
 
-  const blocks: Block[] = entries.map((e) => ({
-    id: e.entry.id,
-    user_id: e.user_id,
-    full_name: e.full_name,
-    day: e.entry.day,
-    start_minutes: e.entry.start_minutes,
-    end_minutes: e.entry.end_minutes,
-    start_display: e.entry.start_display,
-    end_display: e.entry.end_display,
-    subject: e.entry.subject,
-    number: e.entry.number,
-    section: e.entry.section,
-    course_raw: e.entry.course_raw,
-    room: e.entry.room,
-  }));
+  const overrideMap = useMemo(
+    () => new Map(locationOverrides.map((o) => [o.scheduleEntryId, o])),
+    [locationOverrides]
+  );
+
+  const blocks: Block[] = entries
+    .map((e) => ({
+      id: e.entry.id,
+      user_id: e.user_id,
+      full_name: e.full_name,
+      day: e.entry.day,
+      start_minutes: e.entry.start_minutes,
+      end_minutes: e.entry.end_minutes,
+      start_display: e.entry.start_display,
+      end_display: e.entry.end_display,
+      subject: e.entry.subject,
+      number: e.entry.number,
+      section: e.entry.section,
+      course_raw: e.entry.course_raw,
+      room: e.entry.room,
+    }))
+    .filter((block) => {
+      const override = overrideMap.get(block.id);
+      if (override?.isAsync) return false;
+      const normalized = normalizeRoom(block.room);
+      return normalized.kind !== "no-pin" || normalized.reason !== "asynchronous";
+    });
 
   const maxEndMinutes = blocks.length
     ? Math.max(...blocks.map((b) => b.end_minutes))

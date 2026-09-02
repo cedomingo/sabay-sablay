@@ -151,6 +151,7 @@ export default async function GroupDetailPage({
                 <GroupScheduleGrid
                   entries={scheduleData?.entries ?? []}
                   members={scheduleData?.members ?? []}
+                  locationOverrides={locationOverrides}
                 />
               )}
 
