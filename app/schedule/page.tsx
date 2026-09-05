@@ -21,6 +21,7 @@ import CalendarView from "../calendar/CalendarView";
 import AppHeader from "@/components/AppHeader";
 import { SUBJECT_COLORS, buildSubjectColorMap } from "@/lib/map/subjectColors";
 import PersonalMapTab from "./map/PersonalMapTab";
+import CurrentTimeHighlight from "./CurrentTimeHighlight";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 
@@ -264,6 +265,14 @@ export default async function SchedulePage({
   const subjects = [...new Set(schedule.entries.map((e) => e.subject))];
   const subjectColorMap = buildSubjectColorMap(subjects);
 
+  // Serialize entries for the client component
+  const serializedEntries = schedule.entries.map(e => ({
+    id: e.id,
+    day: e.day,
+    start_minutes: e.start_minutes,
+    end_minutes: e.end_minutes,
+  }));
+
   return (
     <main className="min-h-[100dvh] bg-[#F4F1E9]">
       <AppHeader
@@ -308,248 +317,265 @@ export default async function SchedulePage({
           calendarTab={<CalendarView initialTasks={calendarTasks} />}
           scheduleTab={
             <>
-        {/* Mobile view: stacked day cards — no horizontal scrolling.
-            Hidden from md up, where the full timeline grid takes over. */}
-        <div className="space-y-3 md:hidden">
-          {DAYS.map((day) => {
-            const dayEntries = [...schedule.entries]
-              .filter((e) => e.day === day)
-              .sort((a, b) => a.start_minutes - b.start_minutes);
+              {/* CurrentTimeHighlight wraps the schedule grid and adds a glow to the active class */}
+              <CurrentTimeHighlight entries={serializedEntries} />
 
-            return (
-              <div
-                key={day}
-                className="overflow-hidden rounded-[18px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card"
-              >
-                <div className="flex items-center justify-between border-b border-[#D8D6CD] px-4 py-3">
-                  <p className={`font-display text-sm font-semibold ${day === "Mon" ? "text-[#A45D42]" : "text-[#214746]"}`}>
-                    {day}
-                  </p>
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                    {dayEntries.length === 0
-                      ? "Free"
-                      : `${dayEntries.length} ${dayEntries.length === 1 ? "class" : "classes"}`}
-                  </span>
-                </div>
+              {/* Mobile view: stacked day cards — no horizontal scrolling.
+                  Hidden from md up, where the full timeline grid takes over. */}
+              <div className="space-y-3 md:hidden">
+                {DAYS.map((day) => {
+                  const dayEntries = [...schedule.entries]
+                    .filter((e) => e.day === day)
+                    .sort((a, b) => a.start_minutes - b.start_minutes);
 
-                {dayEntries.length === 0 ? (
-                  <p className="px-4 py-3 text-xs text-[#B9BDB4]">
-                    Nothing scheduled
-                  </p>
-                ) : (
-                  <div className="divide-y divide-[#E1DFD7]">
-                    {dayEntries.map((entry) => {                      const color = subjectColorMap.get(entry.subject) || SUBJECT_COLORS[0];
-                      return (
-                        <div
-                          key={entry.id}
-                          className={`flex items-center gap-3 px-4 py-3 ${
-                            entry.hidden ? "opacity-50" : ""
-                          }`}
-                          >
-                          <span
-                            className={`h-9 w-1.5 shrink-0 rounded-full ${color.bg} ${entry.hidden ? "ring-1 ring-dashed ring-[#C77A68]" : ""}`}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-display text-sm font-bold text-[#214746]">
-                              {entry.subject} {entry.number}
-                              {entry.hidden && (
-                                <span className="ml-1 text-[10px] font-normal opacity-70">
-                                  (hidden)
-                                </span>
-                              )}
-                            </p>
-                            <p className="mt-0.5 font-mono text-[11px] text-[#52605C]">
-                              {entry.start_display}&ndash;{entry.end_display}
-                            </p>
-                            {!schedule.tbaPromptEntryIds.has(entry.id) && entry.displayRoom && (
-                              <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-[#87908A]">
-                                <MapPin size={9} />
-                                {entry.displayRoom}
-                              </p>
-                            )}
-                            {schedule.tbaPromptEntryIds.has(entry.id) && (
-                              <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
-                            )}
-                          </div>
-                          <PrivacyToggle entryId={entry.id} initialHidden={entry.hidden} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="hidden overflow-hidden rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card md:block">
-          {/* Grid Header */}
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#D8D6CD] px-4 py-4 md:px-6">
-            <div>
-              <p className="font-display text-lg font-semibold text-[#214746]">
-                Week of{" "}
-                {new Date().toLocaleDateString("en-US", {
-                  month: "long",
-                  day: "numeric",
-                })}
-              </p>
-              <p className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
-                Personal view
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-[#65716B]">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#F4A28C]" />
-              occupied
-              <span className="ml-2 h-2.5 w-2.5 rounded-full border border-[#9FB9AE] bg-[#E5EDE6]" />
-              free
-            </div>
-          </div>
-
-          {/* Grid Body — continuous, time-based timeline (not a fixed-row table) */}
-          <div className="min-w-[720px] overflow-x-auto p-3 md:p-5">
-            {(() => {
-              const maxEndMinutes = schedule.entries.length
-                ? Math.max(...schedule.entries.map((e) => e.end_minutes))
-                : DEFAULT_HOUR_END;
-              const hourEnd = Math.max(
-                DEFAULT_HOUR_END,
-                Math.ceil(maxEndMinutes / 60) * 60
-              );
-              const hours: number[] = [];
-              for (let h = HOUR_START; h <= hourEnd; h += 60) hours.push(h);
-              const timelineHeight = (hourEnd - HOUR_START) * PIXELS_PER_MINUTE;
-
-              return (
-                <div className="grid grid-cols-[74px_repeat(5,minmax(118px,1fr))]">
-                  {/* Day Headers */}
-                  <div className="h-12" />
-                  {DAYS.map((day, i) => (
+                  return (
                     <div
                       key={day}
-                      className={`border-b border-[#D8D6CD] px-2 pb-3 ${
-                        i === 0 ? "text-[#A45D42]" : ""
-                      }`}
+                      className="overflow-hidden rounded-[18px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card"
                     >
-                      <p className="font-display text-sm font-semibold">{day}</p>
-                    </div>
-                  ))}
-
-                  {/* Time axis (reference labels only) */}
-                  <div
-                    className="relative border-r border-[#D8D6CD]"
-                    style={{ height: timelineHeight }}
-                  >
-                    {hours.map((h) => (
-                      <div
-                        key={h}
-                        className="absolute right-3 -translate-y-1/2 font-mono text-[10px] text-[#87908A]"
-                        style={{ top: (h - HOUR_START) * PIXELS_PER_MINUTE }}
-                      >
-                        {formatHourLabel(h)}
+                      <div className="flex items-center justify-between border-b border-[#D8D6CD] px-4 py-3">
+                        <p className={`font-display text-sm font-semibold ${day === "Mon" ? "text-[#A45D42]" : "text-[#214746]"}`}>
+                          {day}
+                        </p>
+                        <span className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                          {dayEntries.length === 0
+                            ? "Free"
+                            : `${dayEntries.length} ${dayEntries.length === 1 ? "class" : "classes"}`}
+                        </span>
                       </div>
-                    ))}
-                  </div>
 
-                  {/* Day columns — each is a continuous vertical timeline */}
-                  {DAYS.map((day) => {
-                    const dayEntries = layoutDayEntries(
-                      schedule.entries.filter((e) => e.day === day)
+                      {dayEntries.length === 0 ? (
+                        <p className="px-4 py-3 text-xs text-[#B9BDB4]">
+                          Nothing scheduled
+                        </p>
+                      ) : (
+                        <div className="divide-y divide-[#E1DFD7]">
+                          {dayEntries.map((entry) => {
+                            const color = subjectColorMap.get(entry.subject) || SUBJECT_COLORS[0];
+                            return (
+                              <div
+                                key={entry.id}
+                                data-entry-id={entry.id}
+                                className={`flex items-center gap-3 px-4 py-3 schedule-entry transition-all ${
+                                  entry.hidden ? "opacity-50" : ""
+                                }`}
+                              >
+                                <span
+                                  className={`h-9 w-1.5 shrink-0 rounded-full ${color.bg} ${entry.hidden ? "ring-1 ring-dashed ring-[#C77A68]" : ""}`}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-display text-sm font-bold text-[#214746]">
+                                    {entry.subject} {entry.number}
+                                    {entry.hidden && (
+                                      <span className="ml-1 text-[10px] font-normal opacity-70">
+                                        (hidden)
+                                      </span>
+                                    )}
+                                  </p>
+                                  <p className="mt-0.5 font-mono text-[11px] text-[#52605C]">
+                                    {entry.start_display}&ndash;{entry.end_display}
+                                  </p>
+                                  {!schedule.tbaPromptEntryIds.has(entry.id) && entry.displayRoom && (
+                                    <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-[#87908A]">
+                                      <MapPin size={9} />
+                                      {entry.displayRoom}
+                                    </p>
+                                  )}
+                                  {schedule.tbaPromptEntryIds.has(entry.id) && (
+                                    <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
+                                  )}
+                                </div>
+                                <PrivacyToggle entryId={entry.id} initialHidden={entry.hidden} />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden overflow-hidden rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card md:block">
+                {/* Grid Header */}
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#D8D6CD] px-4 py-4 md:px-6">
+                  <div>
+                    <p className="font-display text-lg font-semibold text-[#214746]">
+                      Week of{" "}
+                      {new Date().toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                      })}
+                    </p>
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-[#87908A]">
+                      Personal view
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-[#65716B]">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#F4A28C] animate-pulse" />
+                    now
+                    <span className="ml-2 h-2.5 w-2.5 rounded-full border border-[#9FB9AE] bg-[#E5EDE6]" />
+                    free
+                  </div>
+                </div>
+
+                {/* Grid Body — continuous, time-based timeline (not a fixed-row table) */}
+                <div className="min-w-[720px] overflow-x-auto p-3 md:p-5">
+                  {(() => {
+                    const maxEndMinutes = schedule.entries.length
+                      ? Math.max(...schedule.entries.map((e) => e.end_minutes))
+                      : DEFAULT_HOUR_END;
+                    const hourEnd = Math.max(
+                      DEFAULT_HOUR_END,
+                      Math.ceil(maxEndMinutes / 60) * 60
                     );
+                    const hours: number[] = [];
+                    for (let h = HOUR_START; h <= hourEnd; h += 60) hours.push(h);
+                    const timelineHeight = (hourEnd - HOUR_START) * PIXELS_PER_MINUTE;
 
                     return (
-                      <div
-                        key={day}
-                        className="relative border-b border-r border-[#E1DFD7]"
-                        style={{ height: timelineHeight }}
-                      >
-                        {/* Hourly reference lines — pass behind blocks, never split them */}
-                        {hours.map((h) => (
+                      <div className="grid grid-cols-[74px_repeat(5,minmax(118px,1fr))]">
+                        {/* Day Headers */}
+                        <div className="h-12" />
+                        {DAYS.map((day, i) => (
                           <div
-                            key={h}
-                            className="pointer-events-none absolute left-0 right-0 border-t border-[#E1DFD7]"
-                            style={{ top: (h - HOUR_START) * PIXELS_PER_MINUTE }}
-                          />
+                            key={day}
+                            className={`border-b border-[#D8D6CD] px-2 pb-3 ${
+                              i === 0 ? "text-[#A45D42]" : ""
+                            }`}
+                          >
+                            <p className="font-display text-sm font-semibold">{day}</p>
+                          </div>
                         ))}
 
-{dayEntries.map((entry) => {
-                            const color = subjectColorMap.get(entry.subject) || SUBJECT_COLORS[0];
-                            const top = (entry.start_minutes - HOUR_START) * PIXELS_PER_MINUTE;
-                            const height = Math.max(
-                              (entry.end_minutes - entry.start_minutes) * PIXELS_PER_MINUTE,
-                              22
-                            );
-                            const gap = 4;
-                          const leftPct = (entry.col / entry.colCount) * 100;
-                          const widthPct = 100 / entry.colCount;
+                        {/* Time axis (reference labels only) */}
+                        <div
+                          className="relative border-r border-[#D8D6CD]"
+                          style={{ height: timelineHeight }}
+                        >
+                          {hours.map((h) => (
+                            <div
+                              key={h}
+                              className="absolute right-3 -translate-y-1/2 font-mono text-[10px] text-[#87908A]"
+                              style={{ top: (h - HOUR_START) * PIXELS_PER_MINUTE }}
+                            >
+                              {formatHourLabel(h)}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Day columns — each is a continuous vertical timeline */}
+                        {DAYS.map((day) => {
+                          const dayEntries = layoutDayEntries(
+                            schedule.entries.filter((e) => e.day === day)
+                          );
 
                           return (
                             <div
-                              key={entry.id}
-                              className={`group absolute z-10 overflow-hidden rounded-xl border p-2 shadow-[0_2px_4px_rgba(45,60,50,.08)] ${
-                                entry.hidden ? "opacity-50 ring-1 ring-dashed ring-[#C77A68]" : ""
-                              } ${color.bg} ${color.text} ${color.border}`}
-                              style={{
-                                top,
-                                height,
-                                left: `calc(${leftPct}% + ${gap}px)`,
-                                width: `calc(${widthPct}% - ${gap * 2}px)`,
-                              }}
+                              key={day}
+                              className="relative border-b border-r border-[#E1DFD7]"
+                              style={{ height: timelineHeight }}
                             >
-                              <div className="flex items-start justify-between">
-                                <p className="font-display text-xs font-bold leading-tight">
-                                  {entry.subject} {entry.number}
-                                  {entry.hidden && (
-                                    <span className="ml-1 text-[8px] font-normal opacity-70">(hidden)</span>
-                                  )}
-                                </p>
-                                <PrivacyToggle entryId={entry.id} initialHidden={entry.hidden} />
-                              </div>
-                              <p className="mt-0.5 font-mono text-[9px] opacity-75">
-                                {entry.start_display}–{entry.end_display}
-                              </p>
-                              {!schedule.tbaPromptEntryIds.has(entry.id) && entry.displayRoom && (
-                                <p className="mt-1 flex items-center gap-1 font-mono text-[9px] opacity-75">
-                                  <MapPin size={9} />
-                                  {entry.displayRoom}
-                                </p>
-                              )}
-                              {schedule.tbaPromptEntryIds.has(entry.id) && (
-                                <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
-                              )}
+                              {/* Hourly reference lines — pass behind blocks, never split them */}
+                              {hours.map((h) => (
+                                <div
+                                  key={h}
+                                  className="pointer-events-none absolute left-0 right-0 border-t border-[#E1DFD7]"
+                                  style={{ top: (h - HOUR_START) * PIXELS_PER_MINUTE }}
+                                />
+                              ))}
+
+                              {dayEntries.map((entry) => {
+                                const color = subjectColorMap.get(entry.subject) || SUBJECT_COLORS[0];
+                                const top = (entry.start_minutes - HOUR_START) * PIXELS_PER_MINUTE;
+                                const height = Math.max(
+                                  (entry.end_minutes - entry.start_minutes) * PIXELS_PER_MINUTE,
+                                  22
+                                );
+                                const gap = 4;
+                                const leftPct = (entry.col / entry.colCount) * 100;
+                                const widthPct = 100 / entry.colCount;
+
+                                return (
+                                  <div
+                                    key={entry.id}
+                                    data-entry-id={entry.id}
+                                    className={`group absolute z-10 overflow-hidden rounded-xl border p-2 shadow-[0_2px_4px_rgba(45,60,50,.08)] schedule-entry transition-all ${
+                                      entry.hidden ? "opacity-50 ring-1 ring-dashed ring-[#C77A68]" : ""
+                                    } ${color.bg} ${color.text} ${color.border}`}
+                                    style={{
+                                      top,
+                                      height,
+                                      left: `calc(${leftPct}% + ${gap}px)`,
+                                      width: `calc(${widthPct}% - ${gap * 2}px)`,
+                                    }}
+                                  >
+                                    <div className="flex items-start justify-between">
+                                      <p className="font-display text-xs font-bold leading-tight">
+                                        {entry.subject} {entry.number}
+                                        {entry.hidden && (
+                                          <span className="ml-1 text-[8px] font-normal opacity-70">(hidden)</span>
+                                        )}
+                                      </p>
+                                      <PrivacyToggle entryId={entry.id} initialHidden={entry.hidden} />
+                                    </div>
+                                    <p className="mt-0.5 font-mono text-[9px] opacity-75">
+                                      {entry.start_display}–{entry.end_display}
+                                    </p>
+                                    {!schedule.tbaPromptEntryIds.has(entry.id) && entry.displayRoom && (
+                                      <p className="mt-1 flex items-center gap-1 font-mono text-[9px] opacity-75">
+                                        <MapPin size={9} />
+                                        {entry.displayRoom}
+                                      </p>
+                                    )}
+                                    {schedule.tbaPromptEntryIds.has(entry.id) && (
+                                      <TbaLocationPrompt entryId={entry.id} rawRoom={entry.room} />
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })}
                       </div>
                     );
+                  })()}
+                </div>
+              </div>
+
+              {/* Legend */}
+              {subjects.length > 0 && (
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  {subjects.map((subject) => {
+                    const color = subjectColorMap.get(subject) || SUBJECT_COLORS[0];
+                    return (
+                      <div key={subject} className="flex items-center gap-2">
+                        <span
+                          className={`h-3 w-3 rounded-full ${color.bg} border ${color.border}`}
+                        />
+                        <span className="text-xs font-semibold text-[#52605C]">
+                          {subject}
+                        </span>
+                      </div>
+                    );
                   })}
                 </div>
-              );
-            })()}
-          </div>
-        </div>
+              )}
+            </>
+          }
+          mapTab={
+            <PersonalMapTab
+              entries={schedule.entries}
+              overrides={schedule.overrides}
+            />
+          }
+        />
+      </div>
 
-        {/* Legend */}
-        {subjects.length > 0 && (
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            {subjects.map((subject) => {
-              const color = subjectColorMap.get(subject) || SUBJECT_COLORS[0];
-              return (
-                <div key={subject} className="flex items-center gap-2">
-                  <span
-                    className={`h-3 w-3 rounded-full ${color.bg} border ${color.border}`}
-                  />
-                  <span className="text-xs font-semibold text-[#52605C]">
-                    {subject}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Upcoming Deadlines */}
-        {upcomingTasks.length > 0 && (
-          <div className="mt-8 rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card">
+      {/* Upcoming Deadlines */}
+      {upcomingTasks.length > 0 && (
+        <div className="mx-auto max-w-6xl px-4 py-6 md:px-10 md:py-8">
+          <div className="rounded-[22px] border border-[#C8C6BD] bg-[#F8F6F0] shadow-card">
             <div className="flex items-center gap-2 border-b border-[#D8D6CD] px-5 py-4">
               <ListChecks size={14} className="text-[#A991D1]" />
               <h2 className="font-display text-sm font-semibold text-[#214746]">
@@ -636,17 +662,8 @@ export default async function SchedulePage({
               })}
             </div>
           </div>
-        )}
-            </>
-          }
-          mapTab={
-            <PersonalMapTab
-              entries={schedule.entries}
-              overrides={schedule.overrides}
-            />
-          }
-        />
-      </div>
+        </div>
+      )}
     </main>
   );
 }
