@@ -43,9 +43,13 @@ interface Props {
   rawRoom: string | null;
 }
 
-export default function TbaLocationPrompt({ entryId, rawRoom }: Props) {
+export interface TbaLocationPromptProps extends Props {
+  autoOpen?: boolean;
+}
+
+export default function TbaLocationPrompt({ entryId, rawRoom, autoOpen = false }: TbaLocationPromptProps) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const [hidden, setHidden] = useState(false); // resolved or dismissed this session
   const [query, setQuery] = useState("");
   const [roomNumber, setRoomNumber] = useState("");

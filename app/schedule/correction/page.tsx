@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+
 import { useRouter } from "next/navigation";
-import { Check, Trash2, Plus, AlertCircle } from "lucide-react";
+import { Check, Trash2, Plus, AlertCircle, Pencil, X, MapPin, Search, PinOff, AlertTriangle } from "lucide-react";
 import { saveSchedule } from "@/lib/actions/schedule";
 import { parseCrsScheduleBlocks, expandParsedBlocks, extractCrsCourseNumber, OCR_DAY_TO_CRS_CODE, type CrsParsedBlock } from "@/lib/crs-monitor/matcher";
 import { formatMinutesAsDisplay } from "@/lib/client-ocr/textCleanup";
 import AppHeader from "@/components/AppHeader";
+import placesData from "@/lib/map/data/up-diliman-places.json";
+import type { Place } from "@/lib/map/data/types";
 
 interface ParsedEntry {
   day: string;
@@ -137,6 +140,133 @@ function SectionOptionButton({ opt, onSelect }: { opt: any; onSelect: () => void
   );
 }
 
+function LocationPromptModal({ room, onClose, onSave }: { room: string; onClose: () => void; onSave: (newRoom: string) => void }) {
+  const [query, setQuery] = useState("");
+  const [roomNumber, setRoomNumber] = useState("");
+  const [saving, setSaving] = useState<"place" | "async" | "dismiss" | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const places = placesData as Place[];
+  const MAX_RESULTS = 6;
+
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return places.slice(0, MAX_RESULTS);
+    return places.filter((p) => p.name.toLowerCase().includes(q)).slice(0, MAX_RESULTS);
+  }, [query]);
+
+  function closeModal() {
+    if (saving) return;
+    onClose();
+  }
+
+  async function handlePick(place: Place) {
+    setSaving("place");
+    try {
+      const trimmedRoom = roomNumber.trim();
+      const newRoom = trimmedRoom ? `${place.name} ${trimmedRoom}` : place.name;
+      onSave(newRoom);
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleAsync() {
+    setSaving("async");
+    try {
+      onSave("Async");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function handleDismiss() {
+    setSaving("dismiss");
+    try {
+      onClose();
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/30 p-4" onClick={closeModal}>
+      <div className="w-full max-w-sm rounded-[22px] border border-[#D0CEC4] bg-[#F8F6F0] p-6 shadow-elevated" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#FBF2D9] text-[#8A6A1F]">
+            <AlertTriangle size={20} />
+          </div>
+          <button onClick={closeModal} disabled={!!saving} className="grid h-8 w-8 place-items-center rounded-lg text-[#87908A] hover:bg-[#E7EBE5] disabled:opacity-60">
+            <X size={16} />
+          </button>
+        </div>
+
+        <h3 className="mt-4 font-display text-lg font-semibold text-[#214746]">Where will you actually be?</h3>
+        <p className="mt-1 text-sm text-[#717972]">
+          This class&apos;s room is {room && room.trim() ? room : "TBA"} — CRS never recorded a real one. Let your groupmates know where to actually find you.
+        </p>
+
+        {/* Option 1: search/select a place, with an optional room number */}
+        <div className="mt-4">
+          <div className="relative">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#87908A]" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search a building or spot…"
+              disabled={!!saving}
+              className="w-full rounded-xl border border-[#C8C6BD] bg-white py-2.5 pl-9 pr-3 text-sm text-[#214746] outline-none placeholder:text-[#B9BDB4] focus:border-[#214746] disabled:opacity-60"
+            />
+          </div>
+
+          <div className="mt-2">
+            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[#87908A]">Room (optional)</label>
+            <input
+              value={roomNumber}
+              onChange={e => setRoomNumber(e.target.value)}
+              placeholder="e.g. 304"
+              disabled={!!saving}
+              className="w-full rounded-xl border border-[#C8C6BD] bg-white px-3 py-2 text-sm text-[#214746] outline-none placeholder:text-[#B9BDB4] focus:border-[#214746] disabled:opacity-60"
+            />
+            <p className="mt-1 text-[10px] text-[#87908A]">Shown with the building code, e.g. &ldquo;MB 304&rdquo; or &ldquo;CAL 305&rdquo;.</p>
+          </div>
+
+          <div className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-0.5">
+            {results.length === 0 && <p className="px-1 py-2 text-xs text-[#87908A]">No matching places.</p>}
+            {results.map(place => (
+              <button
+                key={place.name}
+                type="button"
+                disabled={!!saving}
+                onClick={() => handlePick(place)}
+                className="flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-2 text-left text-sm text-[#214746] transition-colors hover:border-[#D0CEC4] hover:bg-white disabled:opacity-60"
+              >
+                <MapPin size={13} className="shrink-0 text-[#286057]" />
+                <span className="min-w-0 flex-1 truncate">{place.name}</span>
+                {saving === "place" && <Check size={13} className="shrink-0 text-[#286057]" />}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Option 2: Asynchronous */}
+        <button type="button" onClick={handleAsync} disabled={!!saving} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#C8C6BD] px-4 py-2.5 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] disabled:opacity-60">
+          <PinOff size={14} />
+          {saving === "async" ? "Saving…" : "Asynchronous — no pin for this class"}
+        </button>
+
+        {/* Option 3: Dismiss */}
+        <div className="mt-4 border-t border-[#E1DFD7] pt-3 text-center">
+          <button type="button" onClick={handleDismiss} disabled={!!saving} className="text-xs font-medium text-[#87908A] hover:text-[#52605C] disabled:opacity-60">
+            {saving === "dismiss" ? "Dismissing…" : "Not now, stop asking about this class"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 // Full names for the read-only block view (e.g. "Tuesday 8:30 - 10:00"),
@@ -203,20 +333,21 @@ export default function CorrectionPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  
-  // Phase C: Enrichment state
-  const [enrichmentResults, setEnrichmentResults] = useState<{
-    matched: any[];
-    candidates: any[];
-    unmatched: any[];
-  } | null>(null);
-  const [isEnriching, setIsEnriching] = useState(false);
-  // Unmatched rows whose "Can't find your section? ..." escape hatch is
-  // currently expanded, keyed by the row's raw OCR text.
-  const [expandedUnmatched, setExpandedUnmatched] = useState<Set<string>>(new Set());
-
-  const entryGroups = useMemo(() => groupEntriesByClass(entries), [entries]);
+const [editingIdx, setEditingIdx] = useState<number | null>(null);
+const [locationPrompt, setLocationPrompt] = useState<{ idx: number; room: string } | null>(null);
+   
+   // Phase C: Enrichment state
+   const [enrichmentResults, setEnrichmentResults] = useState<{
+     matched: any[];
+     candidates: any[];
+     unmatched: any[];
+   } | null>(null);
+   const [isEnriching, setIsEnriching] = useState(false);
+   // Unmatched rows whose "Can't find your section? ..." escape hatch is
+   // currently expanded, keyed by the row's raw OCR text.
+   const [expandedUnmatched, setExpandedUnmatched] = useState<Set<string>>(new Set());
+   
+   const entryGroups = useMemo(() => groupEntriesByClass(entries), [entries]);
 
   // Guards the auto-enrich call below against firing more than once.
   //
@@ -600,7 +731,7 @@ export default function CorrectionPage() {
       });
 
       sessionStorage.removeItem("parsedSchedule");
-      router.push(groupId ? `/groups/${groupId}` : "/schedule");
+      router.push("/schedule");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save schedule");
       setSaving(false);
@@ -696,7 +827,6 @@ export default function CorrectionPage() {
                               ? "bg-[#FFFDF5] hover:bg-[#FCF6E3]"
                               : "hover:bg-[#E7EBE5]"
                           }`}
-                          onClick={() => !isEditing && setEditingIdx(idx)}
                         >
                           {isEditing ? (
                             <div
@@ -750,6 +880,13 @@ export default function CorrectionPage() {
                                 className="w-20 rounded-lg border border-[#C8C6BD] bg-[#F4F1E9] px-2 py-1 text-sm"
                               />
                               <button
+                                onClick={() => setEditingIdx(null)}
+                                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-[#B9BDB4] text-[#52605C] hover:bg-[#E7EBE5]"
+                                title="Cancel editing"
+                              >
+                                <X size={14} />
+                              </button>
+                              <button
                                 onClick={() => deleteEntry(idx)}
                                 className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-[#C77A68] hover:bg-[#FCE9E3]"
                               >
@@ -780,11 +917,25 @@ export default function CorrectionPage() {
                                 )}
                               </div>
                               <div className="flex items-center gap-2">
-                                {entry.room ? (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-[#D9E7DE] px-2 py-0.5 text-xs font-semibold text-[#286057]">
-                                    {getTbaDisplay(entry.room) ?? entry.room}
-                                  </span>
-                                ) : null}
+{entry.room ? (
+    <button
+      onClick={() => setLocationPrompt({ idx, room: entry.room || "" })}
+      className="bg-[#D9E7DE] text-xs font-semibold text-[#286057] rounded-full px-2 py-0.5 hover:bg-[#C8D5CC] hover:text-[#1E564D] cursor-pointer transition-colors"
+      title="Change room"
+    >
+      {getTbaDisplay(entry.room) ?? entry.room}
+    </button>
+  ) : null}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingIdx(idx);
+                                  }}
+                                  className="grid h-7 w-7 place-items-center rounded-lg text-[#87908A] hover:bg-[#E7EBE5] hover:text-[#214746]"
+                                  title="Edit entry"
+                                >
+                                  <Pencil size={14} />
+                                </button>
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -958,41 +1109,55 @@ export default function CorrectionPage() {
               >
                 Upload different file
               </button>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <button
-                  onClick={() => handleEnrich()}
-                  disabled={isEnriching || unmatchedCount === 0}
-                  title="Looks up CRS sections for rows not yet matched; already-matched rows are left untouched"
-                  className="rounded-xl border border-[#B9BDB4] px-5 py-3 text-sm font-semibold text-[#52605C] hover:bg-[#E7EBE5] disabled:opacity-50 sm:w-auto"
-                >
-                  {isEnriching
-                    ? "Looking up sections…"
-                    : matchedCount > 0 && unmatchedCount > 0
-                    ? `Look up CRS sections (${unmatchedCount} left)`
-                    : "Look up CRS sections"}
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving || entries.length === 0}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#214746] px-6 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5 disabled:opacity-60 sm:w-auto"
-                >
-                  {saving ? (
-                    <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#F4F1E9] border-t-transparent" />
-                      Saving…
-                    </>
-                  ) : (
-                    <>
-                      <Check size={16} />
-                      Confirm &amp; save schedule
-                    </>
-                  )}
-                </button>
+<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+<button
+  onClick={async () => {
+    if (!isEnriching && entries.length - matchedCount > 0) {
+      await handleEnrich();
+    }
+    await handleSave();
+  }}
+  disabled={saving || entries.length === 0 || (isEnriching || entries.length - matchedCount > 0)}
+  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#214746] px-6 py-3 text-sm font-semibold text-[#F4F1E9] transition-transform hover:-translate-y-0.5 disabled:opacity-60 sm:w-auto"
+>
+  {saving ? (
+    <>
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#F4F1E9] border-t-transparent" />
+      Saving…
+    </>
+  ) : isEnriching ? (
+    <>
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#F4F1E9] border-t-transparent" />
+      Looking up sections…
+    </>
+  ) : entries.length - matchedCount > 0 ? (
+    <>
+      <Check size={16} />
+      Look up sections & save
+    </>
+  ) : (
+    <>
+      <Check size={16} />
+      Confirm & save schedule
+    </>
+  )}
+</button>
               </div>
             </div>
           </>
         )}
       </div>
+
+      {locationPrompt && (
+        <LocationPromptModal
+          room={locationPrompt.room}
+          onClose={() => setLocationPrompt(null)}
+          onSave={newRoom => {
+            updateEntry(locationPrompt.idx, "room", newRoom);
+            setLocationPrompt(null);
+          }}
+        />
+      )}
     </main>
   );
 }
